@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+coredump-*
+*.core
+.DS_Store
+*~
+*.swp
+# local install/test leftovers (never commit a real library)
+test-games.json
+# generated at install/first-run time, not source
+vkbasalt-*.conf
+*.cache
+*.cache.write
+
+# session transfer notes (local only, never publish)
+HANDOFF.md

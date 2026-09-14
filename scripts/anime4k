@@ -1,0 +1,293 @@
+#!/bin/bash
+# anime4k — TUI front-end for the Anime4K Restore launchers (gum-based,
+# matching the Omarchy terminal aesthetic).
+#
+# Usage: anime4k [launch <name> | add | detect <path> | doctor | list | remove <name> | edit <name> | help]
+#   No arguments opens the interactive menu.
+# Game library lives in ~/.config/anime4k/games.json
+set -e
+_SRC="${BASH_SOURCE[0]}"
+while [ -L "$_SRC" ]; do _SRC="$(readlink "$_SRC")"; case "$_SRC" in /*) :;; *) _SRC="$(dirname "${BASH_SOURCE[0]}")/$_SRC";; esac; done
+SCRIPT_DIR="$(cd "$(dirname "$_SRC")" && pwd)"
+unset _SRC
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/anime4k-lib.sh"
+LIB="$HOME/.config/anime4k/games.json"
+
+need() { command -v "$1" >/dev/null 2>&1 || { echo "error: '$1' not found" >&2; exit 1; }; }
+need gum
+need jq
+need python3
+
+lib_init() {
+  mkdir -p "$(dirname "$LIB")"
+  [ -f "$LIB" ] || echo '{"games":{}}' > "$LIB"
+  jq -e '.games' "$LIB" >/dev/null 2>&1 || echo '{"games":{}}' > "$LIB"
+}
+
+lib_ids() { jq -r '.games | keys[]' "$LIB" 2>/dev/null; }
+lib_get() { jq -r --arg id "$2" --arg f "$1" '.games[$id][$f] // empty' "$LIB" 2>/dev/null; }
+lib_names() {
+  # "id — name (runner, variant)" lines for pickers; echoes id after selection
+  jq -r '.games | to_entries[] | "\(.key)\t\(.value.name) (\(.value.runner), \(.value.variant))"' "$LIB" 2>/dev/null
+}
+
+# Real Vulkan device names from the loader (plus "auto" = discrete GPU when
+# detectable, else loader default). Full lines preserved (names contain
+# spaces) — consume with `gum filter`, never `gum choose`.
+gpu_list() {
+  echo "auto (discrete GPU preferred)"
+  vulkaninfo --summary 2>/dev/null | grep -i "deviceName" | sed 's/.*deviceName.*= //' | sort -u
+}
+
+# Map a device name to the radeon/nvidia ICD keyword (auto stays auto).
+gpu_icd() {
+  case "$1" in
+    auto*) echo auto ;;
+    *NVIDIA*) echo nvidia ;;
+    *AMD*|*ATI*|*Radeon*) echo amd ;;
+    *) echo auto ;;
+  esac
+}
+
+cmd_add() {
+  local runner name path variant gpu fps hud id
+  runner="$(gum choose --header "Runner (limits shown)" \
+    "proton — Windows games: D3D9-12/Vulkan get filtered, OpenGL titles run unfiltered" \
+    "rpgmaker — RPGMaker dirs: MV/MZ get filtered, other engines redirect" \
+    "native — Linux executables: Vulkan direct, OpenGL via Zink, 64-bit only" | cut -d' ' -f1)"
+  [ -n "$runner" ] || exit 0
+  case "$runner" in
+    proton)
+      if command -v zenity >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+        path="$(zenity --file-selection --title='Select Windows game executable' --file-filter='Windows executables | *.exe *.EXE' 2>/dev/null || true)"
+      else
+        path="$(gum input --header "Path to game .exe" --placeholder "/home/YOU/Downloads/Game/game.exe")"
+      fi
+      ;;
+    rpgmaker)
+      if command -v zenity >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+        path="$(zenity --file-selection --directory --title='Select RPGMaker game folder' 2>/dev/null || true)"
+      else
+        path="$(gum input --header "Path to game folder" --placeholder "/home/YOU/Downloads/Daily")"
+      fi
+      ;;
+    native)
+      if command -v zenity >/dev/null 2>&1 && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ]; then
+        path="$(zenity --file-selection --title='Select game executable' 2>/dev/null || true)"
+      else
+        path="$(gum input --header "Path to game executable" --placeholder "/path/to/Game.sh")"
+      fi
+      ;;
+  esac
+  [ -n "$path" ] || { echo "no game selected."; exit 0; }
+  [ -e "$path" ] || { echo "error: not found: $path" >&2; exit 1; }
+  # Detection verify-and-switch: high/medium confidence detections that
+  # disagree with the chosen runner get a confirm-to-switch prompt.
+  # Runners also consume different path kinds (rpgmaker needs the folder,
+  # proton/native need the file), so the detected root is adopted then.
+  _det="$(ak_detect_engine "$path")"
+  _eng="${_det%%|*}"; _r1="${_det#*|}"
+  _drunner="${_r1%%|*}"; _r2="${_r1#*|}"
+  _dconf="${_r2%%|*}"; _r3="${_r2#*|}"
+  _droot="${_r3%%|*}"; _ddetail="${_r3#*|}"
+  if [ "$_dconf" != "low" ] && [ "$_drunner" != "ask" ] && [ "$_drunner" != "$runner" ]; then
+    echo "detected: $_ddetail -> runner '$_drunner' (confidence: $_dconf)"
+    if gum confirm "Switch runner to '$_drunner'?"; then
+      runner="$_drunner"
+    fi
+  fi
+  if [ "$runner" = "rpgmaker" ] && [ ! -d "$path" ] && [ -d "$_droot" ]; then
+    echo "rpgmaker needs the game folder: using $_droot instead of $path"
+    path="$_droot"
+  fi
+  unset _det _eng _r1 _drunner _r2 _dconf _r3 _droot _ddetail
+  variant="$(gum choose --header "Restore variant" \
+    "L — strongest, highest GPU cost" \
+    "M — balanced" \
+    "S — lightest, cheapest" \
+    "Soft_S — for aliased art, light" \
+    "Soft_L — for aliased art, strong" | cut -d' ' -f1)"
+  variant="${variant:-L}"
+  gpu="$(gpu_list | gum filter --header "Game GPU (filter follows the game)" --placeholder "type to filter...")"
+  gpu="${gpu:-auto (discrete GPU preferred)}"
+  fps="$(gum input --header "FPS cap (number, or off)" --placeholder "60" --value "60")"
+  fps="${fps:-60}"
+  hud="0"
+  gum confirm "Show fps overlay while playing?" && hud="1"
+  lang=""
+  if [ "$runner" = "proton" ] || [ "$runner" = "native" ]; then
+    lang="$(gum choose --header "Game language (locale; some VNs need Japanese)" \
+      "System default" "ja_JP.UTF-8" "zh_CN.UTF-8" "zh_TW.UTF-8" "ko_KR.UTF-8" \
+      "Custom…" | cut -d' ' -f1)"
+    if [ "$lang" = "Custom…" ]; then
+      lang="$(gum input --header "Locale" --placeholder "ja_JP.UTF-8")"
+    fi
+    [ "$lang" = "System" ] && lang=""
+  fi
+  pmode="shared"
+  if [ "$runner" = "proton" ]; then
+    gum confirm "Separate Wine prefix for this game? (default: shared)" && pmode="game"
+  fi
+  name="$(gum input --header "Display name" --placeholder "$(basename "$path")")"
+  name="${name:-$(basename "$path")}"
+  id="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')"
+  if [ "$runner" = "proton" ]; then
+    if [ -e "$path" ] && [ -d "$(dirname "$path")/renpy" ]; then
+      echo "note: Ren'Py title detected — ANGLE renderer will be forced automatically."
+    fi
+  fi
+  jq --arg id "$id" --arg name "$name" --arg runner "$runner" --arg path "$path" \
+     --arg variant "$variant" --arg gpu "$gpu" --arg fps "$fps" --arg hud "$hud" \
+     --arg pmode "$pmode" --arg lang "$lang" \
+     '.games[$id] = {name:$name, runner:$runner, path:$path, variant:$variant, gpu:$gpu, fps:$fps, hud:$hud, prefix_mode:$pmode, lang:$lang}' \
+     "$LIB" > "$LIB.tmp" && mv "$LIB.tmp" "$LIB"
+  echo "added '$name' as id '$id'."
+}
+
+cmd_list() {
+  local n
+  n="$(jq '.games | length' "$LIB")"
+  [ "$n" -gt 0 ] || { echo "library is empty — run: anime4k add"; exit 0; }
+  lib_names
+}
+
+pick_game() {
+  local sel
+  sel="$(lib_names | gum filter --header "Pick a game" --placeholder "type to filter...")"
+  [ -n "$sel" ] || exit 0
+  printf '%s' "$sel" | cut -f1
+}
+
+cmd_launch() {
+  local id="${1:-}"
+  [ -n "$id" ] || id="$(pick_game)"
+  jq -e ".games[\"$id\"]" "$LIB" >/dev/null || { echo "error: unknown game id '$id'" >&2; exit 1; }
+  local runner path variant gpu fps hud pmode lang
+  runner="$(lib_get runner "$id")"; path="$(lib_get path "$id")"
+  variant="$(lib_get variant "$id")"; gpu="$(lib_get gpu "$id")"
+  fps="$(lib_get fps "$id")"; hud="$(lib_get hud "$id")"
+  pmode="$(lib_get prefix_mode "$id")"; pmode="${pmode:-shared}"
+  lang="$(lib_get lang "$id")"
+  [ -e "$path" ] || { echo "error: path no longer exists: $path" >&2; exit 1; }
+  local hudflag=() langflag=()
+  [ "$hud" = "1" ] && hudflag=(--hud)
+  [ -n "$lang" ] && langflag=(--lang "$lang")
+  case "$runner" in
+    proton)
+      local dev=()
+      case "$gpu" in auto*) : ;; *) dev=(--dxvk-device "$gpu") ;; esac
+      exec "$SCRIPT_DIR/proton-anime4k.sh" --variant "$variant" --fps "$fps" --prefix-mode "$pmode" "${hudflag[@]}" "${langflag[@]}" "${dev[@]}" "$path"
+      ;;
+    rpgmaker)
+      exec "$SCRIPT_DIR/rpgmaker-anime4k.sh" --variant "$variant" --gpu "$(gpu_icd "$gpu")" --fps "$fps" "${hudflag[@]}" --gamepath "$path"
+      ;;
+    native)
+      exec "$SCRIPT_DIR/native-anime4k.sh" --variant "$variant" --gpu "$(gpu_icd "$gpu")" --fps "$fps" "${hudflag[@]}" "${langflag[@]}" "$path"
+      ;;
+    *) echo "error: unknown runner '$runner'" >&2; exit 1 ;;
+  esac
+}
+
+cmd_remove() {
+  local id="${1:-}"
+  [ -n "$id" ] || id="$(pick_game)"
+  jq -e ".games[\"$id\"]" "$LIB" >/dev/null || { echo "error: unknown game id '$id'" >&2; exit 1; }
+  gum confirm "Remove '$(lib_get name "$id")' from the library?" || exit 0
+  jq "del(.games[\"$id\"])" "$LIB" > "$LIB.tmp" && mv "$LIB.tmp" "$LIB"
+  echo "removed '$id'."
+}
+
+cmd_edit() {
+  local id="${1:-}"
+  [ -n "$id" ] || id="$(pick_game)"
+  jq -e ".games[\"$id\"]" "$LIB" >/dev/null || { echo "error: unknown game id '$id'" >&2; exit 1; }
+  local field new
+  local fields="variant gpu fps hud"
+  local _erunner
+  _erunner="$(lib_get runner "$id")"
+  [ "$_erunner" = "proton" ] && fields="$fields prefix_mode"
+  if [ "$_erunner" = "proton" ] || [ "$_erunner" = "native" ]; then
+    fields="$fields lang"
+  fi
+  unset _erunner
+  # shellcheck disable=SC2086
+  field="$(gum choose --header "Edit what?" $fields)"
+  [ -n "$field" ] || exit 0
+  case "$field" in
+    variant) new="$(gum choose "L" "M" "S" "Soft_S" "Soft_L")" ;;
+    gpu) new="$(gpu_list | gum filter --header "Game GPU")"; ;;
+    fps) new="$(gum input --header "FPS cap (number, or off)" --value "$(lib_get fps "$id")")" ;;
+    hud) gum confirm "Show fps overlay?" && new="1" || new="0" ;;
+    prefix_mode) gum confirm "Separate Wine prefix for this game? (default: shared)" && new="game" || new="shared" ;;
+    lang)
+      new="$(gum choose --header "Game language" "System default" "ja_JP.UTF-8" "zh_CN.UTF-8" "zh_TW.UTF-8" "ko_KR.UTF-8" "Custom…" | cut -d' ' -f1)"
+      if [ "$new" = "Custom…" ]; then
+        new="$(gum input --header "Locale" --placeholder "ja_JP.UTF-8")"
+      fi
+      [ "$new" = "System" ] && new=""
+      ;;
+  esac
+  if [ "$field" != "lang" ] && [ -z "$new" ]; then
+    exit 0
+  fi
+  jq --arg id "$id" --arg f "$field" --arg v "$new" '.games[$id][$f] = $v' "$LIB" > "$LIB.tmp" && mv "$LIB.tmp" "$LIB"
+  echo "updated '$id': $field = ${new:-<system default>}"
+}
+
+cmd_menu() {
+  while true; do
+    local action
+    action="$(gum choose --header "Anime4K launcher" "Launch" "Add game" "Manage games" "Doctor" "Quit")"
+    case "$action" in
+      Launch) cmd_launch ;;
+      "Add game") cmd_add ;;
+      Doctor) "$SCRIPT_DIR/anime4k-doctor.sh" || read -r -p "press Enter..." _ ;;
+      "Manage games")
+        local sub
+        sub="$(gum choose --header "Manage" "List" "Edit" "Remove" "Back")"
+        case "$sub" in
+          List) cmd_list ;;
+          Edit) cmd_edit ;;
+          Remove) cmd_remove ;;
+        esac
+        ;;
+      *) exit 0 ;;
+    esac
+  done
+}
+
+cmd_detect() {
+  [ -n "${1:-}" ] || { echo "usage: anime4k detect <path>" >&2; exit 1; }
+  local out eng runner conf root detail
+  out="$(ak_detect_engine "$1")"
+  eng="${out%%|*}"; out="${out#*|}"
+  runner="${out%%|*}"; out="${out#*|}"
+  conf="${out%%|*}"; out="${out#*|}"
+  root="${out%%|*}"; detail="${out#*|}"
+  echo "engine:     $eng"
+  echo "runner:     $runner"
+  echo "confidence: $conf"
+  echo "root:       $root"
+  echo "detail:     $detail"
+}
+
+usage() {
+  echo "anime4k — Anime4K Restore game launcher"
+  echo "Usage: anime4k [launch <id> | add | detect <path> | doctor | list | remove [id] | edit [id] | help]"
+  echo "  No arguments opens the interactive menu."
+}
+
+lib_init
+case "${1:-menu}" in
+  launch) shift; cmd_launch "${1:-}" ;;
+  add) cmd_add ;;
+  detect) shift; cmd_detect "${1:-}" ;;
+  doctor) shift; exec "$SCRIPT_DIR/anime4k-doctor.sh" "$@" ;;
+  list) cmd_list ;;
+  remove) shift; cmd_remove "${1:-}" ;;
+  edit) shift; cmd_edit "${1:-}" ;;
+  help|--help|-h) usage ;;
+  menu) cmd_menu ;;
+  *) echo "error: unknown command '$1' (see: anime4k help)" >&2; exit 1 ;;
+esac
