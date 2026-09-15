@@ -32,7 +32,7 @@ personal use first.
 
 ## Usage example with comparison
 
-<video src="docs/assets/usage.mp4" controls></video>
+![Usage demo — filtered gameplay (Restore L)](docs/assets/usage.mp4)
 
 *Usage demo — filtered gameplay (Restore L).*
 
