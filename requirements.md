@@ -22,8 +22,7 @@ from upstream docs — confirmations welcome.
 | Runner | Need | Notes |
 |---|---|---|
 | proton | `umu-launcher` (Arch multilib — installer handles it; enable multilib if missing; installer pre-installs the matching `lib32-vulkan-driver` provider from the detected GPU so pacman doesn't ask) or Faugus | provides `umu-run`; Steam Proton works too with adapted env |
-| proton | Proton-CachyOS (verified for 32-bit D3D) — offered by `./install.sh` (upstream release tarball, checksum-verified; x86_64_v3 on capable CPUs) | install once via the installer; selected automatically as the config default (override per-launch with `--proton`) |
-| proton | a Proton build (e.g. Proton-CachyOS, GE-Proton) | default is configurable |
+| proton | Proton-CachyOS (verified for 32-bit D3D) — offered by `./install.sh` (upstream release tarball, checksum-verified; x86_64_v3 on capable CPUs) | install once via the installer; selected automatically as the config default (override per-launch with `--proton`; other builds like GE-Proton work too with adapted env) |
 | rpgmaker | `rpgmaker-linux` — offered by `./install.sh` (pinned upstream release) or the [upstream install script](https://github.com/bakustarver/rpgmakermlinux-cicpoffs) |
 | native | Mesa with Zink (Mesa ≥ 23) | for the GL→Vulkan translation path |
 

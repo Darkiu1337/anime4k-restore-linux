@@ -65,7 +65,7 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
 
 ```sh
 git clone https://github.com/Darkiu1337/anime4k-restore-linux.git && cd anime4k-restore-linux
-./install.sh            # deps (offers rpgmaker-linux), shaders, symlinks
+./install.sh            # deps, shaders, Proton-CachyOS, symlinks (offers rpgmaker-linux)
 ./install.sh --check-only   # audit only
 anime4k                 # TUI  |  anime4k-gui  # Qt GUI
 ```
@@ -80,7 +80,7 @@ Details: `requirements.md`. One shared Wine prefix lives under
 * `scripts/` — TUI, shared core, per-runner launchers
 * `gui/` — PySide6 frontend (same runners, same library)
 * `shaders/` — ported `.fx` files + `gen_restore_fx.py` port generator
-* `docs/` — `limits.md` (constraints), `assets/` (gallery)
+* `docs/` — `limits.md` (constraints), `assets/` (gallery + usage video)
 
 ## Attributions
 

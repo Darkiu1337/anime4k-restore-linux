@@ -41,9 +41,9 @@ separate filter device. Pick per game based on where you want the heat.
 Defaults: the proton runner auto-selects the discrete GPU when one is
 detectable (`--dry-run` prints the choice; `--dxvk-device auto` forces the
 loader default, an explicit name overrides). The rpgmaker/native runners
-take `--gpu nvidia|amd|auto` for the same reason: some titles probe the
-default adapter at first launch and permanently pick a non-Vulkan renderer
-when they see the iGPU, which no layer can hook afterwards.
+take `--gpu nvidia|amd|auto`. (An early theory blamed the default adapter
+for a missed filter — that case turned out to be the Proton build — but
+pinning game+filter to the strong GPU remains the sane default.)
 
 Run `anime4k doctor` on a new machine to verify the whole chain
 (manifest, library, shaders, backends, live vkcube run) without any game.
