@@ -32,7 +32,7 @@ personal use first.
 
 ## Usage example with comparison
 
-![Usage demo — filtered gameplay (Restore L)](docs/assets/usage.mp4)
+[![Usage demo — filtered gameplay (Restore L)](docs/assets/usage-poster.jpg)](https://github.com/Darkiu1337/anime4k-restore-linux/blob/master/docs/assets/usage.mp4)
 
 *Usage demo — filtered gameplay (Restore L).*
 
