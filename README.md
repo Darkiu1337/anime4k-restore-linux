@@ -30,6 +30,12 @@ personal use first.
 | ![Ochiru without filter](docs/assets/ochiru-off.png) | ![Ochiru with Restore L](docs/assets/ochiru-filtered.png) |
 | off | **Restore L** |
 
+## Usage example with comparison
+
+<video src="docs/assets/usage.mp4" controls></video>
+
+*Usage demo — filtered gameplay (Restore L).*
+
 Look for cleaner line art, calmer gradients, and less compression noise —
 that is the whole effect. Nothing is upscaled; resolution never changes.
 
