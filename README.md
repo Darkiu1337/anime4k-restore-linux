@@ -34,8 +34,6 @@ personal use first.
 
 [![Usage demo — filtered gameplay (Restore L)](docs/assets/usage-poster.jpg)](https://darkiu1337.github.io/anime4k-restore-linux/docs/assets/usage.mp4)
 
-<video src="https://darkiu1337.github.io/anime4k-restore-linux/docs/assets/usage.mp4" controls></video>
-
 *Usage demo — filtered gameplay (Restore L).*
 
 Look for cleaner line art, calmer gradients, and less compression noise —
