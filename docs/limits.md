@@ -117,3 +117,7 @@ the locale on the host (`/etc/locale.gen` + `sudo locale-gen`) and retry.
   `/run/media/$USER`, and remember the last-used folder. Paths can always
   be pasted instead.
 * **Logs** belong to the selected game: switching games clears the log view.
+* **Mouse in fullscreen**: fixed-resolution titles may mis-map clicks under
+  compositor fullscreen (they keep stale input geometry when scaled).
+  Prefer the game's own fullscreen option; a Wine virtual desktop at
+  output resolution is the fallback. Windowed play is always exact.
