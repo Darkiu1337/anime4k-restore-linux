@@ -80,6 +80,16 @@ case "$EXE" in
   *.exe|*.EXE) ;;
   *) ak_log "warning: '$EXE' does not look like a Windows executable, continuing anyway" ;;
 esac
+# Steam parity: run with the game's own directory as cwd. Titles that load
+# data via relative paths (proven: YaneuraoGameSDK3rd shows a fatal
+# "system data" dialog otherwise) need this; absolute-path titles are
+# unaffected. Resolve relative CLI paths before changing directory.
+case "$EXE" in
+  /*) : ;;
+  *) EXE="$PWD/$EXE" ;;
+esac
+cd "$(dirname "$EXE")" || ak_die "cannot enter game dir: $(dirname "$EXE")"
+ak_log "working directory: $PWD"
 # NOTE: prefix existence is checked after resolution below (umu creates it).
 UMU="$(command -v umu-run || true)"
 [ -n "$UMU" ] || ak_die "umu-run not found on PATH (install umu-launcher; see requirements.md)"
@@ -165,7 +175,7 @@ ak_vkbasalt_env "$VARIANT"
 
 if [ "$DRYRUN" = "1" ]; then
   echo "WINEPREFIX=$PREFIX PROTONPATH=${PROTON:-umu-managed} GAMEID=$GAMEID"
-  echo "filter=Anime4K-Restore-$VARIANT fps=$FPS hud=$HUD lang=${LANG_SET:-system} dxvk=${DXVK_FILTER_DEVICE_NAME:-loader-default}"
+  echo "filter=Anime4K-Restore-$VARIANT fps=$FPS hud=$HUD lang=${LANG_SET:-system} dxvk=${DXVK_FILTER_DEVICE_NAME:-loader-default} cwd=$PWD"
   printf 'umu-run %q' "$EXE"
   if [ "${#GAME_ARGS[@]}" -gt 0 ]; then
     printf ' %q' "${GAME_ARGS[@]}"
