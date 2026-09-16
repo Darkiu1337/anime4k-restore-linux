@@ -1,7 +1,9 @@
 #!/bin/bash
-# anime4k-doctor — self-test the Anime4K Restore filter chain without any game.
+# anime4k-doctor — self-test the Anime4K Restore filter chain + translation
+# readiness, without any game.
 # Checks, in order: layer manifest, library resolution, shaders, GPUs,
-# runner backends, and (with a display) a live vkcube+vkBasalt run.
+# runner backends, (with a display) a live vkcube+vkBasalt run, and the
+# translation deps (bridge client, requests, textbox, QML modules, browser).
 # Exit 0 = chain ready, 1 = problems found. Never touches user config.
 # Usage: anime4k-doctor [--live/--no-live]  (also: anime4k doctor)
 _SRC="${BASH_SOURCE[0]}"
@@ -119,6 +121,50 @@ else
   fi
   unset _out
 fi
+
+# 7. Translation readiness (read-only: presence only, no launches).
+_TDIR="$SCRIPT_DIR/../translate"
+if python3 -c "import websocket, requests" 2>/dev/null; then
+  ok "python bridge deps (websocket, requests)"
+else
+  bad "python websocket/requests missing (translation pipeline needs them; see requirements.md)"
+fi
+if [ -x "$_TDIR/textbox.py" ]; then
+  ok "translation textbox entry point"
+else
+  bad "translate/textbox.py missing or not executable"
+fi
+_QD="$(python3 -c "from PySide6.QtCore import QLibraryInfo; print(QLibraryInfo.path(QLibraryInfo.LibraryPath.QmlImportsPath))" 2>/dev/null || true)"
+_QMISSING=""
+if [ -z "$_QD" ]; then
+  _QMISSING="QtQuick Controls Dialogs Effects (no QML import path)"
+else
+  for _m in QtQuick QtQuick/Controls QtQuick/Dialogs QtQuick/Effects; do
+    if [ -d "$_QD/$_m" ] && find "$_QD/$_m" -maxdepth 1 \( -name 'qmldir' -o -name '*.so' \) -print -quit 2>/dev/null | grep -q .; then
+      :
+    else
+      _QMISSING="$_QMISSING ${_m##*/}"
+    fi
+  done
+fi
+if [ -z "$_QMISSING" ]; then
+  ok "QtQuick QML modules (Controls/Dialogs/Effects)"
+else
+  bad "QML modules missing:$_QMISSING (translation textbox needs qt6-declarative)"
+fi
+unset _QD _QMISSING _m
+_BR=""
+for _b in brave brave-browser brave-origin chromium chromium-browser google-chrome google-chrome-stable chrome microsoft-edge microsoft-edge-stable vivaldi opera; do
+  _p="$(command -v "$_b" 2>/dev/null)" || continue
+  if "$_p" --version 2>/dev/null | grep -qi "chromium\|chrome\|brave\|vivaldi\|opera\|edge"; then _BR="$_p"; break; fi
+done
+# (default-browser resolution lives in install.sh; doctor only needs any pick.)
+if [ -n "$_BR" ]; then
+  ok "Chromium browser for DeepL automation: $_BR"
+else
+  bad "no Chromium browser found (translation needs one; run install.sh)"
+fi
+unset _BR _b _p _TDIR
 
 echo "doctor: $pass passed, $fail failed."
 [ "$fail" = "0" ]

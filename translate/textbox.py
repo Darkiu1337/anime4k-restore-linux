@@ -24,7 +24,7 @@ from PySide6.QtCore import (QByteArray, QModelIndex, QAbstractListModel, QObject
 from PySide6.QtGui import QGuiApplication, QRegion, QColor
 from PySide6.QtQml import QQmlApplicationEngine
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+HERE = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, HERE)
 from cfg import load_config
 CONFIG = load_config()

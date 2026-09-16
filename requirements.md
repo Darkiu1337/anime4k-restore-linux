@@ -54,6 +54,7 @@ Fetched at install time (pinned + checksum-verified, never committed):
 | Need | Arch (verified) | Debian/Ubuntu | Fedora | Notes |
 |---|---|---|---|---|
 | python-websocket-client | `python-websocket-client` [verified] | `python3-websocket` | `python3-websocket-client` | hook bridge client; installer handles it |
+| python-requests | `python-requests` [verified] | `python3-requests` | `python-requests` | DeepL browser automation; installer handles it |
 | Textractor + bridge | fetched by `translate/fetch-vendor.sh` | same | same | Chenx221 build + kuroahna bridge (or hardened fork asset) |
-| Brave/Chromium | existing browser | same | same | DeepL CDP automation target; isolated debug profile |
+| Chromium browser (any) | auto-detected [verified: default-browser-first + CDP smoke test] | same | same | Brave/Chromium/Chrome/Edge/Vivaldi/Opera; default browser preferred, isolated debug profile always; installer records the pick in `translate/config.json` |
 | DLX server (opt-in) | fetched by installer | same | same | local DeepL fallback on :1188 |

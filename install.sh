@@ -233,6 +233,59 @@ else
   fi
 fi
 
+# python-requests (DeepL CDP automation in translate/deepl_cdp.py): same treatment.
+if python3 -c "import requests" 2>/dev/null; then
+  echo "ok: python-requests"
+else
+  echo "missing: python-requests (DeepL browser automation)"
+  missing=1
+  if [ "$CHECK_ONLY" = "0" ]; then
+    install_pkg "python-requests" "python-requests" "python3-requests" "python-requests" || true
+  fi
+fi
+
+# Chromium browser (DeepL CDP automation target): any Brave/Chromium/Chrome
+# build works — the translator only needs --remote-debugging-port against an
+# isolated profile (never the real one). Presence probe here (audit-safe);
+# the full pick + config write happens with translation support below.
+_chromium_default_bin() {
+  # Binary of the default browser, or nothing.
+  command -v xdg-settings >/dev/null 2>&1 || return 0
+  local id desktop exe d
+  id="$(xdg-settings get default-web-browser 2>/dev/null)" || return 0
+  [ -n "$id" ] || return 0
+  for d in "$HOME/.local/share/applications" /usr/local/share/applications /usr/share/applications; do
+    if [ -f "$d/$id" ]; then desktop="$d/$id"; break; fi
+  done
+  [ -n "$desktop" ] || return 0
+  exe="$(grep -m1 '^Exec=' "$desktop" | cut -d= -f2- | awk '{print $1}')"
+  [ -n "$exe" ] || return 0
+  case "$exe" in
+    /*) [ -x "$exe" ] && printf '%s' "$exe" ;;
+    *) command -v "$exe" 2>/dev/null ;;
+  esac
+}
+_chromium_is() {
+  [ -n "$1" ] && [ -x "$1" ] || return 1
+  "$1" --version 2>/dev/null | grep -qi "chromium\|chrome\|brave\|vivaldi\|opera\|edge"
+}
+_chromium_any_present() {
+  local c
+  c="$(_chromium_default_bin)" || true
+  if _chromium_is "$c"; then return 0; fi
+  for c in brave brave-browser brave-origin chromium chromium-browser google-chrome google-chrome-stable chrome microsoft-edge microsoft-edge-stable vivaldi opera; do
+    c="$(command -v "$c" 2>/dev/null)" || continue
+    if _chromium_is "$c"; then return 0; fi
+  done
+  return 1
+}
+if _chromium_any_present; then
+  echo "ok: chromium browser (translation CDP target)"
+else
+  echo "missing: no Chromium browser found (translation needs one for DeepL automation)"
+  missing=1
+fi
+
 # umu-launcher (Proton runner backend): official multilib package on Arch.
 # The lib32-vulkan-driver provider menu (13 choices) would stall a fresh
 # install, so pre-seed the matching provider based on detected GPU first.
@@ -465,6 +518,53 @@ if [ -f "$ROOT/gui/app.py" ]; then
   fi
 fi
 
+# QtQuick QML modules (translation textbox): `import PySide6` alone proves
+# nothing — the QML files (Controls, Dialogs pickers, Effects shadow) live in
+# the system qt6-declarative package. Resolve the import path and look for
+# each module dir (qmldir or plugin .so — robust across distros).
+_qmlmod_ok() {
+  local base="$1" mod="$2"
+  [ -d "$base/$mod" ] || return 1
+  find "$base/$mod" -maxdepth 1 \( -name 'qmldir' -o -name '*.so' \) -print -quit 2>/dev/null | grep -q .
+}
+_qmldir="$(python3 -c "from PySide6.QtCore import QLibraryInfo; print(QLibraryInfo.path(QLibraryInfo.LibraryPath.QmlImportsPath))" 2>/dev/null || true)"
+_qmlmiss=""
+if [ -z "$_qmldir" ]; then
+  _qmlmiss="QtQuick Controls Dialogs Effects (no QML import path)"
+else
+  for _m in QtQuick QtQuick/Controls QtQuick/Dialogs QtQuick/Effects; do
+    _qmlmod_ok "$_qmldir" "$_m" || _qmlmiss="$_qmlmiss ${_m##*/}"
+  done
+fi
+if [ -z "$_qmlmiss" ]; then
+  echo "ok: QtQuick QML modules (Controls/Dialogs/Effects)"
+else
+  echo "missing: QML modules:$_qmlmiss (translation textbox needs them)"
+  missing=1
+  if [ "$CHECK_ONLY" = "0" ] && [[ "$PM" == *pacman* ]]; then
+    if confirm "install qt6-declarative (QML runtime)?"; then
+      pacman_install qt6-declarative
+    else
+      echo "  skipped — the translation textbox will fail to load its UI"
+    fi
+  elif [ "$CHECK_ONLY" = "0" ]; then
+    echo "  install the Qt6 declarative/QML package for your distro (see requirements.md)"
+  fi
+fi
+unset _qmldir _qmlmiss _m
+
+# Textbox entry point must stay executable (a lost exec bit once shipped a
+# "Could not open the translation window" failure via GUI Popen).
+if [ -x "$ROOT/translate/textbox.py" ]; then
+  echo "ok: translate/textbox.py executable"
+else
+  echo "missing: translate/textbox.py is not executable"
+  missing=1
+  if [ "$CHECK_ONLY" = "0" ]; then
+    chmod +x "$ROOT/translate/textbox.py" && echo "  fixed with chmod +x" || echo "  chmod failed"
+  fi
+fi
+
 # (umu-launcher is handled above, next to the core deps, so its
 # lib32 provider pre-seed runs before any other big transaction.)
 
@@ -508,6 +608,86 @@ if [ -d "$ROOT/translate" ]; then
     cp "$ROOT/translate/translate.json.sample" "$ROOT/translate/translate.json"
     echo "seeded translate/translate.json (games registry; edit exe paths)"
   fi
+  # Translation browser: any Chromium works (automation only needs
+  # --remote-debugging-port against the isolated debug profile, never the
+  # real one). Default browser first if Chromium-based, then well-known
+  # binaries; the pick must pass a headless CDP smoke test. A configured,
+  # still-valid brave_bin is never clobbered.
+  translate_config_set_key() {
+    python3 - "$ROOT/translate/config.json" "$1" "$2" <<'EOF'
+import json, os, sys
+p, k, v = sys.argv[1], sys.argv[2], sys.argv[3]
+try:
+    d = json.load(open(p))
+    if not isinstance(d, dict):
+        d = {}
+except (OSError, ValueError):
+    d = {}
+d[k] = v
+os.makedirs(os.path.dirname(p), exist_ok=True)
+json.dump(d, open(p, "w"), indent=2)
+EOF
+  }
+  _chromium_smoke() {
+    # Headless CDP handshake on a temp port + temp profile. Zero side effects.
+    local bin="$1" port tmpd pid
+    command -v curl >/dev/null 2>&1 || return 1
+    port=$((20000 + RANDOM % 20000))
+    tmpd="$(mktemp -d)" || return 1
+    "$bin" --headless --no-first-run --remote-debugging-port="$port" \
+      --remote-allow-origins="*" --user-data-dir="$tmpd" about:blank >/dev/null 2>&1 &
+    pid=$!
+    for _ in $(seq 1 20); do
+      if curl -sf --max-time 2 "http://127.0.0.1:$port/json/version" >/dev/null 2>&1; then
+        kill "$pid" 2>/dev/null || true
+        wait "$pid" 2>/dev/null || true
+        rm -rf "$tmpd"
+        return 0
+      fi
+      sleep 0.3
+    done
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+    rm -rf "$tmpd"
+    return 1
+  }
+  _pick_chromium() {
+    # Sets TRANSLATE_BROWSER_PICK to the first binary passing sniff + smoke.
+    local c
+    TRANSLATE_BROWSER_PICK=""
+    c="$(_chromium_default_bin)" || true
+    if _chromium_is "$c" && _chromium_smoke "$c"; then TRANSLATE_BROWSER_PICK="$c"; return 0; fi
+    for c in brave brave-browser brave-origin chromium chromium-browser google-chrome google-chrome-stable chrome microsoft-edge microsoft-edge-stable vivaldi opera; do
+      c="$(command -v "$c" 2>/dev/null)" || continue
+      if _chromium_is "$c" && _chromium_smoke "$c"; then TRANSLATE_BROWSER_PICK="$c"; return 0; fi
+    done
+    return 1
+  }
+  _cfg_browser="$(python3 -c "import json; print(json.load(open('$ROOT/translate/config.json')).get('brave_bin',''))" 2>/dev/null || true)"
+  if _chromium_is "$_cfg_browser"; then
+    echo "ok: translation browser: $_cfg_browser (configured)"
+  elif _pick_chromium; then
+    translate_config_set_key brave_bin "$TRANSLATE_BROWSER_PICK"
+    echo "translation browser: $TRANSLATE_BROWSER_PICK (CDP smoke-tested, recorded in translate/config.json)"
+  else
+    echo "no Chromium browser found — DeepL automation needs one."
+    if confirm "install chromium (translation requirement)?"; then
+      case "$PM" in
+        *pacman*) pacman_install chromium ;;
+        *apt*|*dnf*) $PM chromium ;;
+        *) echo "  unknown distro: install a Chromium browser manually, then re-run install.sh" ;;
+      esac
+      if _pick_chromium; then
+        translate_config_set_key brave_bin "$TRANSLATE_BROWSER_PICK"
+        echo "translation browser: $TRANSLATE_BROWSER_PICK (recorded in translate/config.json)"
+      else
+        echo "  warning: still no Chromium browser — translation will fail until one is installed"
+      fi
+    else
+      echo "  skipped — install a Chromium browser before using translation"
+    fi
+  fi
+  unset _cfg_browser TRANSLATE_BROWSER_PICK
   TRANSLATE_BRIDGE="${TRANSLATE_BRIDGE:-fixed}"
   if confirm "install VN translation support (Textractor hook + DeepL bridge)?"; then
     if "$ROOT/translate/fetch-vendor.sh" --bridge "$TRANSLATE_BRIDGE"; then

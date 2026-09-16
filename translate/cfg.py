@@ -9,7 +9,9 @@ vn_translate.py launch on a fresh clone.
 import json
 import os
 
-HERE = os.path.dirname(os.path.abspath(__file__))
+# Entry points may run through ~/.local/bin symlinks: resolve them, or the
+# sample/override lookup lands next to the link instead of this directory.
+HERE = os.path.dirname(os.path.realpath(__file__))
 
 DEFAULTS = {
     "hook_url": "ws://localhost:6677",

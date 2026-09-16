@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """deepl_cdp.py — Luna-style DeepL browser hack, native on Linux.
-Launches Brave with --remote-debugging-port, drives deepl.com via CDP:
-clear input, Input.insertText, poll d-textarea[1] for the result.
-Port of LunaTranslator translator/cdp_helper.py + deepl_1.py (cdp_deepl).
+Launches the configured Chromium browser (any Brave/Chromium/Chrome build;
+see translate/config.json `brave_bin`) with --remote-debugging-port, drives
+deepl.com via CDP: clear input, Input.insertText, poll d-textarea[1] for the
+result. Port of LunaTranslator translator/cdp_helper.py + deepl_1.py.
 """
 import hashlib
 import json
@@ -137,6 +138,6 @@ class BraveCDP:
 
 if __name__ == "__main__":
     import sys
-    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)))
     from cfg import load_config
     print(BraveCDP(load_config()).translate(sys.argv[1] if len(sys.argv) > 1 else "おはよう"))
