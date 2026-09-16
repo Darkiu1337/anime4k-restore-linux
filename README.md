@@ -46,9 +46,9 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
   executables (Vulkan direct, OpenGL via Zink).
 * **Per-game library** (TUI + Qt Quick GUI sharing one JSON store): variant,
   GPU, fps cap, overlay, locale, prefix mode.
-* **Theme**: the GUI and the translation textbox follow your active
-  **Omarchy** color scheme (or the desktop's dark/light preference); override
-  in Settings.
+* **Theme**: the GUI and the translation textbox use the KDE Quick Controls
+  style and follow your desktop colour scheme (e.g. Omarchy's KDE theme),
+  light or dark.
 * **Game detection**: engine sniffing pre-selects the runner.
 * **Frame caps everywhere**: DXVK on Proton, MangoHud elsewhere; optional
   overlay readout.
@@ -89,8 +89,9 @@ anime4k-gui --diagnose         # versions, paths, theme source, QML context vali
 anime4k-gui --self-test        # load the entire UI headlessly; fails on any QML error
 ```
 
-The GUI is Qt Quick and follows your **Omarchy** theme (or the desktop
-dark/light preference); override under Settings → Theme. Runtime QML errors
+The GUI and the translation textbox are Qt Quick using the **KDE Quick
+Controls style**, so both follow your desktop colour scheme (e.g. Omarchy's
+KDE theme) including light/dark — no in-app theme switch. Runtime QML errors
 are also appended to `~/.cache/anime4k/gui.log`.
 
 ## Layout

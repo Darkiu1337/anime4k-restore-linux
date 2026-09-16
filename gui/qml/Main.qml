@@ -9,7 +9,6 @@ ApplicationWindow {
     width: 1100
     height: 700
     visible: true
-    color: theme.bg
     property string gid: ""
 
     function refreshDetails() {
@@ -64,14 +63,13 @@ ApplicationWindow {
             Layout.preferredWidth: 300
             Layout.fillHeight: true
             spacing: 6
-            Label { text: "Games"; color: theme.text; font.bold: true }
+            Label { text: "Games"; font.bold: true }
             ListView {
                 id: gameList
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
                 model: gamesModel
-                highlight: Rectangle { color: theme.hover; radius: 4 }
                 onCurrentIndexChanged: root.selectIndex(currentIndex)
                 onCountChanged: root.ensureSelection()
                 delegate: ItemDelegate {
@@ -89,22 +87,19 @@ ApplicationWindow {
                         ColumnLayout {
                             spacing: 0
                             Layout.fillWidth: true
-                            Label { text: model.name; color: theme.text; elide: Text.ElideRight; Layout.fillWidth: true }
-                            Label { text: model.info; color: theme.subtext; font.pointSize: 8; elide: Text.ElideRight; Layout.fillWidth: true }
+                            Label { text: model.name; elide: Text.ElideRight; Layout.fillWidth: true }
+                            Label { text: model.info; opacity: 0.7; font.pointSize: 8; elide: Text.ElideRight; Layout.fillWidth: true }
                         }
-                    }
-                    background: Rectangle {
-                        color: "transparent"
                     }
                 }
             }
             RowLayout {
-                Btn { text: "Add…"; Layout.fillWidth: true; onClicked: wizard.open("") }
+                Btn { text: "Add…"; Layout.fillWidth: true; onClicked: wizard.start("") }
                 Btn {
                     text: "Edit…"
                     Layout.fillWidth: true
                     enabled: root.gid !== ""
-                    onClicked: wizard.open(root.gid)
+                    onClicked: wizard.start(root.gid)
                 }
                 Btn {
                     text: "Remove"
@@ -118,7 +113,7 @@ ApplicationWindow {
         ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
-            spacing: 6
+            spacing: 8
 
             RowLayout {
                 Image {
@@ -131,15 +126,15 @@ ApplicationWindow {
                 Text {
                     id: detailText
                     text: "Select a game."
-                    color: theme.text
                     wrapMode: Text.Wrap
                     textFormat: Text.RichText
                     Layout.fillWidth: true
                 }
             }
 
-            GridLayout {
-                columns: 4
+            Flow {
+                Layout.fillWidth: true
+                spacing: 6
                 Btn {
                     text: "Launch"
                     enabled: root.gid !== "" && !backend.running
@@ -200,8 +195,8 @@ ApplicationWindow {
                 }
             }
 
-            Label { text: backend.statusText; color: theme.text }
-            Label { text: backend.bridgeText; color: theme.subtext }
+            Label { text: backend.statusText }
+            Label { text: backend.bridgeText; opacity: 0.7; font.pointSize: 8 }
 
             TextArea {
                 id: logView
@@ -211,31 +206,29 @@ ApplicationWindow {
                 readOnly: true
                 wrapMode: TextEdit.Wrap
                 placeholderText: "Launch output appears here…"
-                color: theme.text
-                background: Rectangle { color: theme.field; radius: 6; border.color: theme.border }
+                font.family: "monospace"
             }
         }
     }
 
-    Wizard { id: wizard }
-    SettingsDlg { id: settingsDlg }
-    PickThreadDlg { id: pickThreadDlg }
-    PromptDlg { id: promptDlg }
+    Wizard { id: wizard; objectName: "wizardDlg" }
+    SettingsDlg { id: settingsDlg; objectName: "settingsDlg" }
+    PickThreadDlg { id: pickThreadDlg; objectName: "pickThreadDlg" }
+    PromptDlg { id: promptDlg; objectName: "promptDlg" }
 
     Dialog {
         id: previewDlg
         title: "Resolved command"
         modal: true
         width: 640
+        padding: 16
+        anchors.centerIn: parent
         standardButtons: Dialog.Ok
-        palette.windowText: theme.text
         Label {
             id: previewLabel
-            width: parent ? parent.width : 0
-            color: theme.text
+            width: previewDlg.availableWidth
             wrapMode: Text.Wrap
         }
-        background: Rectangle { color: theme.panel; radius: 8; border.color: theme.border }
     }
 
     Connections {
@@ -253,6 +246,4 @@ ApplicationWindow {
                 backend.removeGame(root.gid)
         }
     }
-
-    background: Rectangle { color: theme.bg }
 }

@@ -47,10 +47,12 @@ QML modules needed: `QtQuick`, `QtQuick.Controls`, `QtQuick.Layouts`
 (text shadow). On Arch these ship in `qt6-declarative` [verified: 6.11.2]
 (pulled in with the desktop Qt stack; `pip install PySide6` bundles them).
 
-The GUI follows the active **Omarchy** color scheme when present, else the
-desktop dark/light preference; override in Settings. `anime4k-gui --diagnose`
-prints the resolved theme and verifies the QML context, and
-`--self-test` loads the whole UI headlessly (see README).
+The GUI and textbox use the **KDE Quick Controls style**
+(`org.kde.desktop`, Arch package `qqc2-desktop-style` [verified]) so both
+follow your desktop colour scheme (e.g. Omarchy's `kdeglobals` theme) and
+light/dark automatically. Without it they fall back to Fusion. There is no
+in-app theme switch. `anime4k-gui --diagnose` prints the resolved style and
+palette, and `--self-test` loads the whole UI headlessly (see README).
 
 ## VN translation (translate/)
 

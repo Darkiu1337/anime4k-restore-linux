@@ -15,29 +15,29 @@ ApplicationWindow {
     color: "transparent"
     flags: Qt.FramelessWindowHint | Qt.Tool
 
-    function withAlpha(hex, a) {
+    SystemPalette { id: sys; colorGroup: SystemPalette.Active }
+
+    function withAlpha(c, a) {
+        var s = c.toString()
+        if (s.length === 9)
+            s = s.slice(0, 7)
         var h = ("0" + Math.round(Math.min(1, Math.max(0, a)) * 255).toString(16)).slice(-2)
-        return "#" + h + hex.slice(1)
+        return "#" + h + s.slice(1)
     }
 
     component BarButton : ToolButton {
         property string tip: ""
         font.pointSize: 9
-        palette.buttonText: theme.text
         ToolTip.text: tip
         ToolTip.visible: hovered && tip.length > 0
         ToolTip.delay: 500
-        background: Rectangle {
-            radius: 5
-            color: checked ? theme.accent : (hovered ? theme.hover : "transparent")
-        }
     }
 
     Rectangle {
         id: panel
         anchors.fill: parent
         radius: backend.cornerRadius
-        color: withAlpha(theme.panel, backend.panelAlpha)
+        color: withAlpha(sys.window, backend.panelAlpha)
 
         HoverHandler {
             onHoveredChanged: backend.pointerAt(-1, -1, hovered)
@@ -48,13 +48,12 @@ ApplicationWindow {
             anchors.fill: parent
             spacing: 0
 
-            // ---- titlebar (drag handle + window buttons) ----
             Rectangle {
                 id: titlebarRect
                 Layout.fillWidth: true
                 Layout.preferredHeight: titleRow.implicitHeight + 4
                 visible: backend.chromeVisible
-                color: withAlpha(theme.panelAlt, backend.panelAlpha)
+                color: withAlpha(sys.alternateBase, backend.panelAlpha)
                 topLeftRadius: backend.cornerRadius
                 topRightRadius: backend.cornerRadius
                 Rectangle {
@@ -85,7 +84,6 @@ ApplicationWindow {
 
                     Label {
                         text: "vn-translate"
-                        color: theme.text
                         font.pointSize: 9
                         Layout.fillWidth: true
                     }
@@ -96,7 +94,6 @@ ApplicationWindow {
                 }
             }
 
-            // ---- scrolling history ----
             ListView {
                 id: history
                 objectName: "historyView"
@@ -112,7 +109,6 @@ ApplicationWindow {
                 onCountChanged: { stickBottom = atYEnd; if (stickBottom) positionViewAtEnd(); }
                 onContentHeightChanged: if (stickBottom && count > 0) positionViewAtEnd()
                 onMovementEnded: stickBottom = atYEnd
-
                 onContentYChanged: {
                     if (contentY < lastY - 1) stickBottom = false;
                     else if (atYEnd) stickBottom = true;
@@ -184,13 +180,12 @@ ApplicationWindow {
                 }
             }
 
-            // ---- function toolbar ----
             Rectangle {
                 id: toolbarRect
                 Layout.fillWidth: true
                 Layout.preferredHeight: toolRow.implicitHeight + 6
                 visible: backend.chromeVisible
-                color: withAlpha(theme.panelAlt, backend.panelAlpha)
+                color: withAlpha(sys.alternateBase, backend.panelAlpha)
                 bottomLeftRadius: backend.cornerRadius
                 bottomRightRadius: backend.cornerRadius
                 Rectangle {
@@ -229,7 +224,7 @@ ApplicationWindow {
                     BarButton { text: "Style"; tip: "Text and window style"; onClicked: styleDrawer.open() }
                     Label {
                         text: backend.statusText
-                        color: theme.subtext
+                        opacity: 0.7
                         font.pointSize: 8
                         Layout.fillWidth: true
                         elide: Text.ElideRight
@@ -253,13 +248,9 @@ ApplicationWindow {
         height: root.height
         edge: Qt.RightEdge
         onVisibleChanged: backend.setDrawerOpen(visible)
-        palette.text: theme.text
-        palette.buttonText: theme.buttonText
-        palette.windowText: theme.subtext
-        palette.highlightedText: theme.text
 
         background: Rectangle {
-            color: withAlpha(theme.panel, 0.97)
+            color: withAlpha(sys.window, 0.97)
             radius: backend.cornerRadius
         }
 
@@ -273,9 +264,9 @@ ApplicationWindow {
                 width: styleDrawer.width - 20 - 14
                 spacing: 8
 
-                Label { text: "Style"; color: theme.text; font.pointSize: 12; font.bold: true }
+                Label { text: "Style"; font.pointSize: 12; font.bold: true }
 
-                Label { text: "Font"; color: theme.subtext; font.pointSize: 9 }
+                Label { text: "Font"; opacity: 0.7; font.pointSize: 9 }
                 ComboBox {
                     objectName: "fontCombo"
                     Layout.fillWidth: true
@@ -284,7 +275,7 @@ ApplicationWindow {
                     onActivated: backend.fontFamily = index === 0 ? "" : currentText
                 }
 
-                Label { text: "Size"; color: theme.subtext; font.pointSize: 9 }
+                Label { text: "Size"; opacity: 0.7; font.pointSize: 9 }
                 SpinBox {
                     Layout.fillWidth: true
                     from: 8
@@ -293,7 +284,7 @@ ApplicationWindow {
                     onValueModified: backend.fontSize = value
                 }
 
-                Label { text: "Colors"; color: theme.subtext; font.pointSize: 9 }
+                Label { text: "Colors"; opacity: 0.7; font.pointSize: 9 }
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 6
@@ -301,21 +292,21 @@ ApplicationWindow {
                         objectName: "enColorBtn"
                         text: "EN"
                         onClicked: { styleDrawer.colorTarget = "en"; colorDialog.open() }
-                        background: Rectangle { radius: 5; color: backend.enColor; border.color: theme.border }
+                        background: Rectangle { radius: 5; color: backend.enColor; border.color: sys.mid }
                         contentItem: Text { text: "EN"; color: "#ffffff"; style: Text.Outline; styleColor: "black"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     }
                     Button {
                         objectName: "jaColorBtn"
                         text: "JA"
                         onClicked: { styleDrawer.colorTarget = "ja"; colorDialog.open() }
-                        background: Rectangle { radius: 5; color: backend.jaColor; border.color: theme.border }
+                        background: Rectangle { radius: 5; color: backend.jaColor; border.color: sys.mid }
                         contentItem: Text { text: "JA"; color: "#ffffff"; style: Text.Outline; styleColor: "black"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     }
                     Button {
                         objectName: "shColorBtn"
                         text: "Sh"
                         onClicked: { styleDrawer.colorTarget = "shadow"; colorDialog.open() }
-                        background: Rectangle { radius: 5; color: backend.shadowColor; border.color: theme.border }
+                        background: Rectangle { radius: 5; color: backend.shadowColor; border.color: sys.mid }
                         contentItem: Text { text: "Sh"; color: "#ffffff"; style: Text.Outline; styleColor: "black"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     }
                 }
@@ -326,7 +317,7 @@ ApplicationWindow {
                     onToggled: backend.shadowEnabled = checked
                 }
 
-                Label { text: "Background opacity: " + Math.round(backend.panelAlpha * 100) + "%"; color: theme.subtext; font.pointSize: 9 }
+                Label { text: "Background opacity: " + Math.round(backend.panelAlpha * 100) + "%"; opacity: 0.7; font.pointSize: 9 }
                 Slider {
                     Layout.fillWidth: true
                     from: 0.2
@@ -336,7 +327,7 @@ ApplicationWindow {
                     onMoved: backend.panelAlpha = value
                 }
 
-                Label { text: "Corner radius: " + backend.cornerRadius + "px (compositor default)"; color: theme.subtext; font.pointSize: 9 }
+                Label { text: "Corner radius: " + backend.cornerRadius + "px (compositor default)"; opacity: 0.7; font.pointSize: 9 }
                 Slider {
                     Layout.fillWidth: true
                     from: 0

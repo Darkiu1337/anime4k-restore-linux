@@ -152,6 +152,11 @@ if [ -z "$_QMISSING" ]; then
 else
   bad "QML modules missing:$_QMISSING (GUI + textbox need qt6-declarative)"
 fi
+if [ -n "$_QD" ] && [ -d "$_QD/org/kde/desktop" ]; then
+  ok "KDE Quick Controls style (follows desktop colour scheme)"
+else
+  echo "note: org.kde.desktop QML style absent — GUI/textbox use the Fusion fallback (install qqc2-desktop-style)"
+fi
 unset _QD _QMISSING _m
 # GUI + textbox UI load smoke test (headless; no display needed).
 _GUI="$SCRIPT_DIR/../gui/app.py"

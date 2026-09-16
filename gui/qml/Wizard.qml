@@ -3,21 +3,23 @@ import QtQuick.Controls
 import QtQuick.Dialogs
 import QtQuick.Layouts
 
-Window {
+Dialog {
     id: root
-    title: root.gid === "" ? "Add game" : "Edit game"
-    modality: Qt.ApplicationModal
-    width: 620
-    height: 480
-    color: theme.bg
+    modal: true
+    width: 680
+    height: 540
+    padding: 16
+    anchors.centerIn: parent
+    standardButtons: Dialog.NoButton
     property string gid: ""
     property var runnerKeys: ["proton", "rpgmaker", "native"]
     property var runnerDescs: []
     property var variantNames: []
     property string runner: "proton"
 
-    function open(gid) {
+    function start(gid) {
         root.gid = gid
+        root.title = gid === "" ? "Add game" : "Edit game"
         var descs = JSON.parse(backend.runnersJson())
         root.runnerDescs = root.runnerKeys.map(function(k) { return k + " — " + descs[k] })
         root.variantNames = backend.listVariants()
@@ -60,8 +62,9 @@ Window {
             trEnable.checked = tr.enabled === "1"
             trHook.text = tr.hook_code || ""
         }
+        errLabel.text = ""
         pages.currentIndex = 0
-        root.visible = true
+        root.open()
     }
 
     function collect() {
@@ -100,7 +103,7 @@ Window {
             errLabel.text = err
             return
         }
-        root.visible = false
+        root.close()
     }
 
     FileDialog {
@@ -128,177 +131,218 @@ Window {
         }
     }
 
-    ColumnLayout {
-        anchors.fill: parent
-        anchors.margins: 12
+    footer: RowLayout {
         spacing: 8
+        Btn { text: "Cancel"; onClicked: root.close() }
+        Item { Layout.fillWidth: true }
+        Btn {
+            text: "Back"
+            enabled: pages.currentIndex > 0
+            onClicked: pages.currentIndex--
+        }
+        Btn {
+            text: pages.currentIndex === pages.count - 1 ? "Finish" : "Next"
+            onClicked: {
+                if (pages.currentIndex === pages.count - 1)
+                    finish()
+                else
+                    pages.currentIndex++
+            }
+        }
+    }
 
-        SwipeView {
+    ColumnLayout {
+        spacing: 8
+        width: availableWidth
+        height: availableHeight
+
+        StackLayout {
             id: pages
             Layout.fillWidth: true
             Layout.fillHeight: true
-            interactive: false
+            currentIndex: 0
 
             Item {
-                ColumnLayout {
+                ScrollView {
+                    id: sv1
                     anchors.fill: parent
-                    Label { text: "Runner" + (root.gid !== "" ? " (locked: runner changes mean re-adding)" : ""); color: theme.text; font.bold: true }
-                    Repeater {
-                        id: runnerRepeater
-                        model: root.runnerDescs
-                        RadioButton {
-                            text: modelData
-                            checked: index === 0
-                            enabled: root.gid === ""
-                            palette.windowText: theme.text
-                            onCheckedChanged: if (checked) root.runner = root.runnerKeys[index]
+                    clip: true
+                    ColumnLayout {
+                        width: sv1.availableWidth
+                        spacing: 8
+                        Label { text: "Runner" + (root.gid !== "" ? " (locked: runner changes mean re-adding)" : ""); font.bold: true }
+                        Repeater {
+                            id: runnerRepeater
+                            model: root.runnerDescs
+                            RadioButton {
+                                text: modelData
+                                checked: index === 0
+                                enabled: root.gid === ""
+                                onCheckedChanged: if (checked) root.runner = root.runnerKeys[index]
+                            }
                         }
                     }
                 }
             }
 
             Item {
-                ColumnLayout {
+                ScrollView {
+                    id: sv2
                     anchors.fill: parent
-                    Label { text: "Game location"; color: theme.text; font.bold: true }
-                    RowLayout {
-                        Layout.fillWidth: true
-                        TextField {
-                            id: pathField
+                    clip: true
+                    ColumnLayout {
+                        width: sv2.availableWidth
+                        spacing: 8
+                        Label { text: "Game location"; font.bold: true }
+                        RowLayout {
                             Layout.fillWidth: true
-                            placeholderText: "/path/to/game"
-                            color: theme.text
-                            background: Rectangle { color: theme.field; radius: 5; border.color: theme.border }
-                        }
-                        Btn {
-                            text: "Browse…"
-                            onClicked: {
-                                if (root.runner === "rpgmaker") {
-                                    dirPicker.currentFolder = backend.pathToFileUrl(backend.lastDir())
-                                    dirPicker.open()
-                                } else {
-                                    exePicker.currentFolder = backend.pathToFileUrl(backend.lastDir())
-                                    exePicker.open()
-                                }
+                            TextField {
+                                id: pathField
+                                Layout.fillWidth: true
+                                placeholderText: "/path/to/game"
                             }
-                        }
-                        Btn {
-                            text: "Detect"
-                            onClicked: {
-                                var res = backend.detect(pathField.text)
-                                if (res === "") {
-                                    detectLabel.text = "Detection failed to run."
-                                    return
-                                }
-                                var parts = res.split("|")
-                                var r = parts[1], conf = parts[2], rroot = parts[3], detail = parts[4]
-                                if ((conf === "high" || conf === "medium") && root.runnerKeys.indexOf(r) >= 0) {
-                                    root.runner = r
-                                    for (var i = 0; i < root.runnerKeys.length; i++)
-                                        runnerRepeater.itemAt(i).checked = (root.runnerKeys[i] === r)
-                                    if (r === "rpgmaker" && !backend.isDir(pathField.text) && backend.isDir(rroot)) {
-                                        pathField.text = rroot
-                                        detectLabel.text = "Detected: " + detail + " → runner '" + r + "' (" + conf + "). Path set to game folder."
+                            Btn {
+                                text: "Browse…"
+                                onClicked: {
+                                    if (root.runner === "rpgmaker") {
+                                        dirPicker.currentFolder = backend.pathToFileUrl(backend.lastDir())
+                                        dirPicker.open()
                                     } else {
-                                        detectLabel.text = "Detected: " + detail + " → runner '" + r + "' (" + conf + " confidence)."
+                                        exePicker.currentFolder = backend.pathToFileUrl(backend.lastDir())
+                                        exePicker.open()
                                     }
-                                } else {
-                                    detectLabel.text = "Detected: " + detail + " (confidence: " + conf + ") — pick the runner manually."
+                                }
+                            }
+                            Btn {
+                                text: "Detect"
+                                onClicked: {
+                                    var res = backend.detect(pathField.text)
+                                    if (res === "") {
+                                        detectLabel.text = "Detection failed to run."
+                                        return
+                                    }
+                                    var parts = res.split("|")
+                                    var r = parts[1], conf = parts[2], rroot = parts[3], detail = parts[4]
+                                    if ((conf === "high" || conf === "medium") && root.runnerKeys.indexOf(r) >= 0) {
+                                        root.runner = r
+                                        for (var i = 0; i < root.runnerKeys.length; i++)
+                                            runnerRepeater.itemAt(i).checked = (root.runnerKeys[i] === r)
+                                        if (r === "rpgmaker" && !backend.isDir(pathField.text) && backend.isDir(rroot)) {
+                                            pathField.text = rroot
+                                            detectLabel.text = "Detected: " + detail + " → runner '" + r + "' (" + conf + "). Path set to game folder."
+                                        } else {
+                                            detectLabel.text = "Detected: " + detail + " → runner '" + r + "' (" + conf + " confidence)."
+                                        }
+                                    } else {
+                                        detectLabel.text = "Detected: " + detail + " (confidence: " + conf + ") — pick the runner manually."
+                                    }
                                 }
                             }
                         }
-                    }
-                    Label {
-                        id: detectLabel
-                        text: "Tip: Detect fills in the runner from the previous page."
-                        color: theme.subtext
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
-                    }
-                }
-            }
-
-            Item {
-                GridLayout {
-                    anchors.fill: parent
-                    columns: 2
-                    Label { text: "Filter and performance"; color: theme.text; font.bold: true; Layout.columnSpan: 2 }
-                    Label { text: "Variant:"; color: theme.text }
-                    ComboBox {
-                        id: variantCombo
-                        Layout.fillWidth: true
-                    }
-                    Label { text: "Game GPU:"; color: theme.text }
-                    ComboBox {
-                        id: gpuCombo
-                        Layout.fillWidth: true
-                    }
-                    Label { text: "FPS cap (0 = off):"; color: theme.text }
-                    SpinBox {
-                        id: fpsSpin
-                        from: 0
-                        to: 480
-                        value: 60
-                        Layout.fillWidth: true
-                    }
-                    CheckBox {
-                        id: hudCheck
-                        text: "Show fps overlay while playing"
-                        Layout.columnSpan: 2
-                        palette.windowText: theme.text
-                    }
-                    Label { text: "Language:"; color: theme.text }
-                    ComboBox {
-                        id: langCombo
-                        editable: true
-                        Layout.fillWidth: true
-                        model: backend.locales()
-                    }
-                    CheckBox {
-                        id: prefixCheck
-                        text: "Separate Wine prefix for this game (Proton only)"
-                        Layout.columnSpan: 2
-                        palette.windowText: theme.text
+                        Label {
+                            id: detectLabel
+                            text: "Tip: Detect fills in the runner from the previous page."
+                            opacity: 0.7
+                            wrapMode: Text.Wrap
+                            Layout.fillWidth: true
+                        }
                     }
                 }
             }
 
             Item {
-                ColumnLayout {
+                ScrollView {
+                    id: sv3
                     anchors.fill: parent
-                    Label { text: "Name"; color: theme.text; font.bold: true }
-                    TextField {
-                        id: nameField
-                        Layout.fillWidth: true
-                        placeholderText: "Display name"
-                        color: theme.text
-                        background: Rectangle { color: theme.field; radius: 5; border.color: theme.border }
+                    clip: true
+                    GridLayout {
+                        width: sv3.availableWidth
+                        columns: 2
+                        columnSpacing: 12
+                        rowSpacing: 10
+                        Label { text: "Filter and performance"; font.bold: true; Layout.columnSpan: 2 }
+                        Label { text: "Variant:" }
+                        ComboBox {
+                            id: variantCombo
+                            Layout.fillWidth: true
+                        }
+                        Label { text: "Game GPU:" }
+                        ComboBox {
+                            id: gpuCombo
+                            Layout.fillWidth: true
+                        }
+                        Label { text: "FPS cap (0 = off):" }
+                        SpinBox {
+                            id: fpsSpin
+                            from: 0
+                            to: 480
+                            value: 60
+                            Layout.fillWidth: true
+                        }
+                        CheckBox {
+                            id: hudCheck
+                            text: "Show fps overlay while playing"
+                            Layout.columnSpan: 2
+                        }
+                        Label { text: "Language:" }
+                        ComboBox {
+                            id: langCombo
+                            editable: true
+                            Layout.fillWidth: true
+                            model: backend.locales()
+                        }
+                        CheckBox {
+                            id: prefixCheck
+                            text: "Separate Wine prefix for this game (Proton only)"
+                            Layout.columnSpan: 2
+                        }
                     }
                 }
             }
 
             Item {
-                ColumnLayout {
+                ScrollView {
+                    id: sv4
                     anchors.fill: parent
-                    Label { text: "Translation (Japanese VNs)"; color: theme.text; font.bold: true }
-                    CheckBox {
-                        id: trEnable
-                        text: "Translate Japanese dialogue via DeepL"
-                        palette.windowText: theme.text
+                    clip: true
+                    ColumnLayout {
+                        width: sv4.availableWidth
+                        spacing: 8
+                        Label { text: "Name"; font.bold: true }
+                        TextField {
+                            id: nameField
+                            Layout.fillWidth: true
+                            placeholderText: "Display name"
+                        }
                     }
-                    Label { text: "Hook code:"; color: theme.text }
-                    TextField {
-                        id: trHook
-                        Layout.fillWidth: true
-                        placeholderText: "hook code, e.g. HSX10@54DC0:game.exe (optional)"
-                        color: theme.text
-                        background: Rectangle { color: theme.field; radius: 5; border.color: theme.border }
-                    }
-                    Label {
-                        text: "Proton/Windows games only. Filter and translation compose in one launch. First run: enable, launch with Translate, pick the story thread in Textractor (Setup shows its window), paste its code here."
-                        color: theme.subtext
-                        wrapMode: Text.Wrap
-                        Layout.fillWidth: true
+                }
+            }
+
+            Item {
+                ScrollView {
+                    id: sv5
+                    anchors.fill: parent
+                    clip: true
+                    ColumnLayout {
+                        width: sv5.availableWidth
+                        spacing: 8
+                        Label { text: "Translation (Japanese VNs)"; font.bold: true }
+                        CheckBox {
+                            id: trEnable
+                            text: "Translate Japanese dialogue via DeepL"
+                        }
+                        Label { text: "Hook code:" }
+                        TextField {
+                            id: trHook
+                            Layout.fillWidth: true
+                            placeholderText: "hook code, e.g. HSX10@54DC0:game.exe (optional)"
+                        }
+                        Label {
+                            text: "Proton/Windows games only. Filter and translation compose in one launch. First run: enable, launch with Translate, pick the story thread in Textractor (Setup shows its window), paste its code here."
+                            opacity: 0.7
+                            wrapMode: Text.Wrap
+                            Layout.fillWidth: true
+                        }
                     }
                 }
             }
@@ -306,31 +350,9 @@ Window {
 
         Label {
             id: errLabel
-            color: theme.danger
+            visible: text !== ""
             wrapMode: Text.Wrap
             Layout.fillWidth: true
-            visible: text !== ""
-        }
-
-        RowLayout {
-            Layout.fillWidth: true
-            Btn { text: "Cancel"; onClicked: root.visible = false }
-            Item { Layout.fillWidth: true }
-            Btn {
-                text: "Back"
-                enabled: pages.currentIndex > 0
-                onClicked: pages.currentIndex--
-            }
-            Btn {
-                text: pages.currentIndex === pages.count - 1 ? "Finish" : "Next"
-                onClicked: {
-                    if (pages.currentIndex === pages.count - 1)
-                        finish()
-                    else
-                        pages.currentIndex++
-                }
-            }
         }
     }
-
 }

@@ -14,16 +14,16 @@ import time
 from collections import deque
 from PySide6.QtCore import (QByteArray, QModelIndex, QAbstractListModel, QObject,
                             Qt, QTimer, QUrl, QRect, Signal, Slot, Property)
-from PySide6.QtGui import QGuiApplication, QRegion, QColor
+from PySide6.QtGui import QGuiApplication, QRegion, QColor, QPalette
 from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuickControls2 import QQuickStyle
 
 HERE = os.path.dirname(os.path.realpath(__file__))
 REPO_ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 sys.path.insert(0, REPO_ROOT)
 from cfg import load_config
-from core import process as core_process, store as core_store
-from core.theme_qt import Theme
+from core import process as core_process
 CONFIG = load_config()
 ORG, APP = "vn-translate", "textbox"
 
@@ -75,6 +75,18 @@ class PairModel(QAbstractListModel):
         return self._rows[-1][1] if self._rows else ""
 
 
+def _palette_defaults():
+    """(text, dim, shadow) defaults from the desktop palette, so the box
+    follows light/dark instead of assuming a dark desktop."""
+    try:
+        pal = QGuiApplication.palette()
+        return (pal.color(QPalette.ColorRole.WindowText).name(),
+                pal.color(QPalette.ColorRole.PlaceholderText).name(),
+                pal.color(QPalette.ColorRole.Window).name())
+    except Exception:
+        return "#f0f0f0", "#9a9a9a", "#000000"
+
+
 def _css_color(v, fallback):
     # str(QColor) is garbage; use .name() (see HANDOFF.md QML specifics).
     try:
@@ -118,10 +130,11 @@ class Backend(QObject):
         self._status_text = "● stopped"
         self._font_size = 11.0
         self._font_family = ""
-        self._en_color = "#f0f0f0"
-        self._ja_color = "#9a9a9a"
+        self._en_def, self._ja_def, self._sh_def = _palette_defaults()
+        self._en_color = self._en_def
+        self._ja_color = self._ja_def
         self._shadow_enabled = True
-        self._shadow_color = "#000000"
+        self._shadow_color = self._sh_def
         self._panel_alpha = 0.88
         self._chrome_autohide = False
         self._chrome_visible = True
@@ -174,12 +187,12 @@ class Backend(QObject):
                           notify=fontFamilyChanged)
     enColor = Property(str,
                        lambda s: s._en_color,
-                       lambda s, v: (setattr(s, "_en_color", _css_color(v, "#f0f0f0")),
+                       lambda s, v: (setattr(s, "_en_color", _css_color(v, s._en_def)),
                                      s.enColorChanged.emit()),
                        notify=enColorChanged)
     jaColor = Property(str,
                        lambda s: s._ja_color,
-                       lambda s, v: (setattr(s, "_ja_color", _css_color(v, "#9a9a9a")),
+                       lambda s, v: (setattr(s, "_ja_color", _css_color(v, s._ja_def)),
                                      s.jaColorChanged.emit()),
                        notify=jaColorChanged)
     shadowEnabled = Property(bool,
@@ -189,7 +202,7 @@ class Backend(QObject):
                               notify=shadowEnabledChanged)
     shadowColor = Property(str,
                             lambda s: s._shadow_color,
-                            lambda s, v: (setattr(s, "_shadow_color", _css_color(v, "#000000")),
+                            lambda s, v: (setattr(s, "_shadow_color", _css_color(v, s._sh_def)),
                                           s.shadowColorChanged.emit()),
                             notify=shadowColorChanged)
     panelAlpha = Property(float,
@@ -651,10 +664,10 @@ class Backend(QObject):
         except (TypeError, ValueError):
             self._font_size = 11.0
         self._font_family = str(s.value("fontfamily", "") or "")
-        self._en_color = _css_color(s.value("encolor", ""), "#f0f0f0")
-        self._ja_color = _css_color(s.value("jacololr", ""), "#9a9a9a")
+        self._en_color = _css_color(s.value("encolor", ""), self._en_def)
+        self._ja_color = _css_color(s.value("jacololr", ""), self._ja_def)
         self._shadow_enabled = s.value("shadow", True, type=bool)
-        self._shadow_color = _css_color(s.value("shadowcolor", ""), "#000000")
+        self._shadow_color = _css_color(s.value("shadowcolor", ""), self._sh_def)
         try:
             _pa = float(s.value("panelalpha", 0.88))
             self._panel_alpha = min(1.0, max(0.15, _pa))
@@ -1079,6 +1092,11 @@ def self_test(backend, window):
 
 def main():
     app = QGuiApplication(sys.argv)
+    try:
+        QQuickStyle.setFallbackStyle("Fusion")
+        QQuickStyle.setStyle("org.kde.desktop")
+    except Exception:
+        pass
     engine = QQmlApplicationEngine()
     qml_errors = []
     engine.warnings.connect(lambda w: qml_errors.extend(w))
@@ -1086,12 +1104,9 @@ def main():
     args = sys.argv[1:]
     if "--thread" in args and args.index("--thread") + 1 < len(args):
         backend.thread = args[args.index("--thread") + 1]
-    theme = Theme(app)
-    theme.apply_override(core_store.load_config().get("gui.theme", "System"))
-    app._qml_objects = (backend, theme)
+    app._qml_objects = (backend,)
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("pairModel", backend.pairs)
-    engine.rootContext().setContextProperty("theme", theme)
     try:
         from PySide6.QtGui import QFontDatabase
         engine.rootContext().setContextProperty(

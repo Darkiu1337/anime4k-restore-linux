@@ -7,9 +7,10 @@ Dialog {
     title: "Pick thread"
     modal: true
     width: 560
-    height: 420
+    height: 460
+    padding: 16
+    anchors.centerIn: parent
     standardButtons: Dialog.Ok | Dialog.Cancel
-    palette.windowText: theme.text
     property string gid: ""
     property var threads: []
     property bool sampling: false
@@ -62,34 +63,45 @@ Dialog {
     }
 
     ColumnLayout {
-        width: parent ? parent.width : 0
-        height: parent ? parent.height : 0
+        spacing: 10
+        width: availableWidth
+        height: availableHeight
+
         Label {
             id: statusLabel
-            color: theme.text
             wrapMode: Text.Wrap
             Layout.fillWidth: true
         }
+
         ListView {
             id: threadList
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
             model: root.threads
-            highlight: Rectangle { color: theme.hover; radius: 4 }
             delegate: ItemDelegate {
                 width: threadList.width
-                text: modelData.follow ? modelData.last
-                      : modelData.name + "  (#" + modelData.num + ", " + modelData.n + " lines)" + (modelData.current ? "  ← current" : "") + "\n" + modelData.last
-                palette.text: modelData.follow ? theme.subtext : theme.text
                 onClicked: threadList.currentIndex = index
+                contentItem: ColumnLayout {
+                    spacing: 2
+                    Label {
+                        text: modelData.follow ? modelData.last
+                              : modelData.name + "  (#" + modelData.num + ", " + modelData.n + " lines)"
+                                + (modelData.current ? "  ← current" : "")
+                        font.bold: !modelData.follow
+                        elide: Text.ElideRight
+                        Layout.fillWidth: true
+                    }
+                    Label {
+                        text: modelData.follow ? "" : modelData.last
+                        opacity: 0.7
+                        font.pointSize: 8
+                        elide: Text.ElideRight
+                        visible: text !== ""
+                        Layout.fillWidth: true
+                    }
+                }
             }
         }
-    }
-
-    background: Rectangle {
-        color: theme.panel
-        radius: 8
-        border.color: theme.border
     }
 }

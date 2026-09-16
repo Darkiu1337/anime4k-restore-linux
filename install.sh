@@ -556,6 +556,22 @@ else
 fi
 unset _qmldir _qmlmiss _m
 
+# KDE Quick Controls style (optional): with org.kde.desktop the GUI and textbox
+# follow the desktop colour scheme (kdeglobals); otherwise they fall back to
+# Fusion. Not fatal.
+_qmldir2="$(python3 -c "from PySide6.QtCore import QLibraryInfo; print(QLibraryInfo.path(QLibraryInfo.LibraryPath.QmlImportsPath))" 2>/dev/null || true)"
+if [ -n "$_qmldir2" ] && [ -d "$_qmldir2/org/kde/desktop" ]; then
+  echo "ok: KDE Quick Controls style (org.kde.desktop)"
+else
+  echo "note: org.kde.desktop QML style not found — the GUI/textbox fall back to Fusion"
+  if [ "$CHECK_ONLY" = "0" ] && [[ "$PM" == *pacman* ]]; then
+    if confirm "install qqc2-desktop-style (KDE QML theme)?"; then
+      pacman_install qqc2-desktop-style
+    fi
+  fi
+fi
+unset _qmldir2
+
 # Textbox entry point must stay executable (a lost exec bit once shipped a
 # "Could not open the translation window" failure via GUI Popen).
 if [ -x "$ROOT/translate/textbox.py" ]; then

@@ -6,8 +6,9 @@ Dialog {
     id: root
     modal: true
     width: 440
+    padding: 16
+    anchors.centerIn: parent
     standardButtons: Dialog.NoButton
-    palette.windowText: theme.text
     property string body: ""
     property var options: []
     property int choice: -1
@@ -25,21 +26,17 @@ Dialog {
 
     onClosed: {
         if (root.tag === "backend") {
-            if (root.choice >= 0)
-                backend.resolvePrompt(root.choice)
-            else
-                backend.resolvePrompt(-1)
+            backend.resolvePrompt(root.choice >= 0 ? root.choice : -1)
         } else {
             root.done(root.choice)
         }
     }
 
     ColumnLayout {
-        width: parent ? parent.width : 0
-        spacing: 10
+        spacing: 12
+        width: availableWidth
         Label {
             text: root.body
-            color: theme.text
             wrapMode: Text.Wrap
             Layout.fillWidth: true
         }
@@ -51,11 +48,5 @@ Dialog {
                 onClicked: { root.choice = index; root.close() }
             }
         }
-    }
-
-    background: Rectangle {
-        color: theme.panel
-        radius: 8
-        border.color: theme.border
     }
 }

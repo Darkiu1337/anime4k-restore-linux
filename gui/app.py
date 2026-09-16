@@ -13,13 +13,27 @@ APP_DIR = os.path.dirname(os.path.realpath(__file__))
 REPO_ROOT = os.path.dirname(APP_DIR)
 sys.path.insert(0, REPO_ROOT)
 from core import paths, store, library, commands, process, system, icons
-from core.theme_qt import Theme
 
 from PySide6.QtCore import (QAbstractListModel, QModelIndex, QObject, Qt,
                             QProcess, QProcessEnvironment, QTimer, QUrl,
                             Signal, Slot, Property, qInstallMessageHandler)
-from PySide6.QtGui import QGuiApplication
+from PySide6.QtGui import QGuiApplication, QPalette
 from PySide6.QtQml import QQmlApplicationEngine
+from PySide6.QtQuickControls2 import QQuickStyle
+
+STYLE = "org.kde.desktop"
+
+
+def apply_style():
+    """Native KDE Quick Controls (follows kdeglobals); Fusion fallback."""
+    try:
+        QQuickStyle.setFallbackStyle("Fusion")
+        QQuickStyle.setStyle(STYLE)
+    except Exception:
+        try:
+            QQuickStyle.setStyle("Fusion")
+        except Exception:
+            pass
 
 QML_ERRORS = []
 
@@ -107,10 +121,9 @@ class GuiBackend(QObject):
     threadResults = Signal(str)
     gamesChanged = Signal()
 
-    def __init__(self, model, theme, parent=None):
+    def __init__(self, model, parent=None):
         super().__init__(parent)
         self._model = model
-        self._theme = theme
         self._status = "Idle."
         self._bridge = "○ bridge down"
         self._running = False
@@ -615,10 +628,9 @@ class GuiBackend(QObject):
         base = store.load_config()
         base.update(cfg)
         store.save_config(base)
-        self._theme.apply_override(base.get("gui.theme", "System"))
 
 
-def self_test(backend, model, theme, window, warnings, qml_errors=None):
+def self_test(backend, model, window, warnings, qml_errors=None):
     assert model.rowCount() == len(store.load_games()), "model must mirror the library"
     assert qml_errors is not None and not qml_errors, \
         f"runtime QML errors: {qml_errors[:3]}"
@@ -643,11 +655,6 @@ def self_test(backend, model, theme, window, warnings, qml_errors=None):
     assert backend.translateGame("__no_such_game__", False) != ""
     assert backend.pickThread("__no_such_game__") != ""
     assert backend.gameDetails("__no_such_game__") == "Select a game."
-    assert backend._theme.bg.startswith("#")
-    backend._theme.apply_override("light")
-    assert backend._theme.bg.startswith("#") and backend._theme.scheme == "light"
-    backend._theme.apply_override("dark")
-    assert backend._theme.scheme == "dark"
     assert isinstance(backend.listVariants(), list) and backend.listVariants()
     assert isinstance(backend.listGpus(), list) and backend.listGpus()
     assert json.loads(backend.runnersJson()).get("proton")
@@ -660,7 +667,7 @@ def self_test(backend, model, theme, window, warnings, qml_errors=None):
     print("self-test: ALL OK")
 
 
-def _diagnose(app, engine, theme, model, backend):
+def _diagnose(app, engine, model, backend):
     print("python:", sys.version.split()[0])
     try:
         from PySide6 import __version__ as pv
@@ -671,11 +678,18 @@ def _diagnose(app, engine, theme, model, backend):
     print("app_dir:", APP_DIR)
     print("qml_dir:", os.path.join(APP_DIR, "qml"))
     print("platform:", QGuiApplication.platformName())
-    print("theme source:", theme.source, "scheme:", theme.scheme, "bg:", theme.bg)
+    try:
+        pal = app.palette()
+        print("style:", STYLE,
+              "windowText:", pal.color(QPalette.ColorRole.WindowText).name(),
+              "window:", pal.color(QPalette.ColorRole.Window).name(),
+              "highlight:", pal.color(QPalette.ColorRole.Highlight).name())
+    except Exception as e:
+        print("style/palette: n/a", e)
     print("games:", model.rowCount())
     print("roots:", len(engine.rootObjects()))
     ctx = engine.rootContext()
-    for name in ("theme", "backend", "gamesModel"):
+    for name in ("backend", "gamesModel"):
         obj = ctx.contextProperty(name)
         valid = False
         try:
@@ -713,29 +727,22 @@ def main():
     app = QGuiApplication(sys.argv)
     app.setApplicationName("Anime4K Launcher")
     qInstallMessageHandler(_capture_qt_messages)
+    apply_style()
     engine = QQmlApplicationEngine()
     qml_warnings = []
     engine.warnings.connect(lambda w: qml_warnings.extend(str(x) for x in w))
-    theme = Theme(app)
-    theme.apply_override(store.load_config().get("gui.theme", "System"))
     model = GamesModel(app)
     model.refresh()
-    backend = GuiBackend(model, theme, app)
-    app._qml_objects = (theme, model, backend)
+    backend = GuiBackend(model, app)
+    app._qml_objects = (model, backend)
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("gamesModel", model)
-    engine.rootContext().setContextProperty("theme", theme)
-    try:
-        from PySide6.QtGui import QFontDatabase
-        engine.rootContext().setContextProperty("fontFamilies", QFontDatabase.families())
-    except Exception:
-        engine.rootContext().setContextProperty("fontFamilies", [])
     engine.load(QUrl.fromLocalFile(os.path.join(APP_DIR, "qml", "Main.qml")))
     for _ in range(20):
         app.processEvents()
     diagnose = "--diagnose" in sys.argv[1:]
     if diagnose:
-        _diagnose(app, engine, theme, model, backend)
+        _diagnose(app, engine, model, backend)
     if qml_warnings or QML_ERRORS:
         logp = _log_path()
         if logp:
@@ -749,7 +756,7 @@ def main():
     if "--self-test" in sys.argv[1:]:
         roots = engine.rootObjects()
         try:
-            self_test(backend, model, theme, roots[0] if roots else None,
+            self_test(backend, model, roots[0] if roots else None,
                       qml_warnings, QML_ERRORS)
         except AssertionError as e:
             print(f"self-test FAILED: {e}")
