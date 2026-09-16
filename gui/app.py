@@ -16,7 +16,8 @@ from core import paths, store, library, commands, process, system, icons
 
 from PySide6.QtCore import (QAbstractListModel, QModelIndex, QObject, Qt,
                             QProcess, QProcessEnvironment, QTimer, QUrl,
-                            Signal, Slot, Property, qInstallMessageHandler)
+                            Signal, Slot, Property, QMetaObject, Q_ARG,
+                            QCoreApplication, qInstallMessageHandler)
 from PySide6.QtGui import QGuiApplication, QPalette
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
@@ -664,6 +665,22 @@ def self_test(backend, model, window, warnings, qml_errors=None):
     else:
         assert window.property("gid") == "", "empty library must select nothing"
     assert not warnings, f"QML warnings: {warnings[:3]}"
+    # Wizard edit path (binds every field from an existing game) must not
+    # raise runtime QML errors.
+    wizard = window.findChild(QObject, "wizardDlg")
+    assert wizard is not None, "wizard dialog must exist"
+    games = store.load_games()
+    if games:
+        gids = sorted(games)
+        gid = next((g for g in gids if not (games[g].get("lang") or "")), gids[0])
+        assert QMetaObject.invokeMethod(wizard, "start", Qt.DirectConnection,
+                                        Q_ARG("QVariant", gid)), \
+            "wizard.start must be invokable"
+        QCoreApplication.processEvents()
+        assert wizard.property("title"), "wizard must title itself for a game"
+        assert not qml_errors, f"wizard edit raised QML errors: {qml_errors[:2]}"
+        QMetaObject.invokeMethod(wizard, "close")
+        QCoreApplication.processEvents()
     print("self-test: ALL OK")
 
 

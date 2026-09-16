@@ -54,8 +54,9 @@ Dialog {
             fpsSpin.value = g.fps === "off" ? 0 : (parseInt(g.fps) || 60)
             hudCheck.checked = g.hud === "1"
             var li = langCombo.find(g.lang || "")
-            if (li >= 0) langCombo.currentIndex = li
-            else { langCombo.currentIndex = 0; langCombo.currentText = g.lang }
+            if (li >= 0)
+                langCombo.currentIndex = li
+            else { langCombo.currentIndex = -1; langCombo.editText = g.lang || "" }
             prefixCheck.checked = g.prefix_mode === "game"
             nameField.text = g.name || ""
             var tr = g.translate || {}
@@ -68,7 +69,7 @@ Dialog {
     }
 
     function collect() {
-        var lang = langCombo.currentText.trim()
+        var lang = langCombo.editText.trim()
         if (langCombo.currentIndex === 0)
             lang = ""
         return JSON.stringify({
@@ -288,6 +289,7 @@ Dialog {
                         Label { text: "Language:" }
                         ComboBox {
                             id: langCombo
+                            objectName: "langCombo"
                             editable: true
                             Layout.fillWidth: true
                             model: backend.locales()
