@@ -22,7 +22,8 @@ for v in S M L Soft_S Soft_L; do
 done
 [ "$removed" = "1" ] && echo "removed deployed shaders."
 [ "$kept" = "1" ] && echo "(some shader files were kept, see above.)"
-for link in "$HOME/.local/bin/anime4k" "$HOME/.local/bin/anime4k-gui"; do
+for link in "$HOME/.local/bin/anime4k" "$HOME/.local/bin/anime4k-gui" \
+            "$HOME/.local/bin/vn-launch" "$HOME/.local/bin/vn-textbox"; do
   if [ -L "$link" ]; then
     rm -f "$link"
     echo "removed symlink $link"
@@ -42,5 +43,13 @@ if [ -f "$HOME/.local/share/vkBasalt/.anime4k-installed" ]; then
   rmdir "$HOME/.local/share/vkBasalt" 2>/dev/null || true
   echo "removed source-built vkBasalt (system packages it pulled in are left alone)."
 fi
+# Regenerable caches/logs (icon extraction, GUI/translate logs, isolated
+# DeepL browser profile). Your library and config are never touched.
+for cache in "$HOME/.cache/anime4k" "$HOME/.cache/vn-translate"; do
+  if [ -d "$cache" ]; then
+    rm -rf "$cache"
+    echo "removed cache $cache"
+  fi
+done
 echo "done. Kept (your data): ~/.config/anime4k/games.json and config.json."
 echo "System packages are never removed. Delete the repo directory itself to finish: $ROOT"

@@ -32,20 +32,25 @@ from upstream docs — confirmations welcome.
 Debian: `meson ninja-build glslang-tools spirv-headers libvulkan-dev`;
 Fedora: `meson ninja-build glslang spirv-headers vulkan-headers`).
 
-## GUI (PySide6)
+## GUI (PySide6 + Qt Quick)
 
-Prefer the system package so the app follows desktop/Qt theming (qt6ct etc.):
+The launcher GUI and the translation textbox are both Qt Quick (QML). Prefer
+the system package so the app follows desktop/Qt theming (qt6ct etc.):
 
 | Distro | Install |
 |---|---|
 | Arch | `sudo pacman -S pyside6` [verified] |
-| Others | `pip install PySide6` (bundled Qt; in-app theme selector covers styling) |
+| Others | `pip install PySide6` (bundled Qt) |
 
-The translation textbox is Qt Quick (QML): it needs the `QtQuick`,
-`QtQuick.Controls`, `QtQuick.Dialogs` (font/color pickers) and
-`QtQuick.Effects` (text shadow) modules. On Arch these ship in
-`qt6-declarative` [verified: 6.11.2] (pulled in with the desktop Qt stack;
-`pip install PySide6` bundles them).
+QML modules needed: `QtQuick`, `QtQuick.Controls`, `QtQuick.Layouts`
+(screens), `QtQuick.Dialogs` (file/font/color pickers) and `QtQuick.Effects`
+(text shadow). On Arch these ship in `qt6-declarative` [verified: 6.11.2]
+(pulled in with the desktop Qt stack; `pip install PySide6` bundles them).
+
+The GUI follows the active **Omarchy** color scheme when present, else the
+desktop dark/light preference; override in Settings. `anime4k-gui --diagnose`
+prints the resolved theme and verifies the QML context, and
+`--self-test` loads the whole UI headlessly (see README).
 
 ## VN translation (translate/)
 

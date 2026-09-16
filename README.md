@@ -81,6 +81,18 @@ Details: `requirements.md`. One shared Wine prefix lives under
 `~/.config/anime4k/config.json`. The installer symlinks `anime4k` /
 `anime4k-gui` into `~/.local/bin` and offers to add it to `PATH`.
 
+## Troubleshooting
+
+```sh
+anime4k doctor                 # audit the whole chain (filter, runners, translation, GUI)
+anime4k-gui --diagnose         # versions, paths, theme source, QML context validity
+anime4k-gui --self-test        # load the entire UI headlessly; fails on any QML error
+```
+
+The GUI is Qt Quick and follows your **Omarchy** theme (or the desktop
+dark/light preference); override under Settings → Theme. Runtime QML errors
+are also appended to `~/.cache/anime4k/gui.log`.
+
 ## Layout
 
 * `scripts/` — TUI + per-runner launchers

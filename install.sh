@@ -521,8 +521,8 @@ if [ -f "$ROOT/gui/app.py" ]; then
   fi
 fi
 
-# QtQuick QML modules (translation textbox): `import PySide6` alone proves
-# nothing — the QML files (Controls, Dialogs pickers, Effects shadow) live in
+# QtQuick QML modules (GUI + textbox): `import PySide6` alone proves nothing —
+# the QML files (Controls, Layouts, Dialogs pickers, Effects shadow) live in
 # the system qt6-declarative package. Resolve the import path and look for
 # each module dir (qmldir or plugin .so — robust across distros).
 _qmlmod_ok() {
@@ -533,22 +533,22 @@ _qmlmod_ok() {
 _qmldir="$(python3 -c "from PySide6.QtCore import QLibraryInfo; print(QLibraryInfo.path(QLibraryInfo.LibraryPath.QmlImportsPath))" 2>/dev/null || true)"
 _qmlmiss=""
 if [ -z "$_qmldir" ]; then
-  _qmlmiss="QtQuick Controls Dialogs Effects (no QML import path)"
+  _qmlmiss="QtQuick Controls Layouts Dialogs Effects (no QML import path)"
 else
-  for _m in QtQuick QtQuick/Controls QtQuick/Dialogs QtQuick/Effects; do
+  for _m in QtQuick QtQuick/Controls QtQuick/Layouts QtQuick/Dialogs QtQuick/Effects; do
     _qmlmod_ok "$_qmldir" "$_m" || _qmlmiss="$_qmlmiss ${_m##*/}"
   done
 fi
 if [ -z "$_qmlmiss" ]; then
-  echo "ok: QtQuick QML modules (Controls/Dialogs/Effects)"
+  echo "ok: QtQuick QML modules (Controls/Layouts/Dialogs/Effects)"
 else
-  echo "missing: QML modules:$_qmlmiss (translation textbox needs them)"
+  echo "missing: QML modules:$_qmlmiss (the GUI and translation textbox need them)"
   missing=1
   if [ "$CHECK_ONLY" = "0" ] && [[ "$PM" == *pacman* ]]; then
     if confirm "install qt6-declarative (QML runtime)?"; then
       pacman_install qt6-declarative
     else
-      echo "  skipped — the translation textbox will fail to load its UI"
+      echo "  skipped — the GUI and textbox will fail to load their UI"
     fi
   elif [ "$CHECK_ONLY" = "0" ]; then
     echo "  install the Qt6 declarative/QML package for your distro (see requirements.md)"

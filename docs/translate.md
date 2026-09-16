@@ -150,7 +150,10 @@ stock-bridge installs simply keep following the selection). Manual control:
 
 `translate/textbox.py` is a Qt Quick readout: same pipeline and window
 behavior as always, but text styling binds live — font size/family/color
-changes restyle the whole history, including existing lines. The **Style**
+changes restyle the whole history, including existing lines. Window chrome
+(bars, panel, drawer) follows the shared theme — the active **Omarchy**
+color scheme, or the desktop dark/light preference; the same Settings →
+Theme choice applies to the launcher GUI and the textbox. The **Style**
 toolbar button opens a drawer with font, size, EN/JA colors, a soft text
 **shadow** (GPU halo that keeps text selectable), background **opacity**,
 top/bottom-bar **autohide** (bars reveal when the cursor enters their edge

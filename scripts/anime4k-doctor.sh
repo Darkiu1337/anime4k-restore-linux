@@ -137,9 +137,9 @@ fi
 _QD="$(python3 -c "from PySide6.QtCore import QLibraryInfo; print(QLibraryInfo.path(QLibraryInfo.LibraryPath.QmlImportsPath))" 2>/dev/null || true)"
 _QMISSING=""
 if [ -z "$_QD" ]; then
-  _QMISSING="QtQuick Controls Dialogs Effects (no QML import path)"
+  _QMISSING="QtQuick Controls Layouts Dialogs Effects (no QML import path)"
 else
-  for _m in QtQuick QtQuick/Controls QtQuick/Dialogs QtQuick/Effects; do
+  for _m in QtQuick QtQuick/Controls QtQuick/Layouts QtQuick/Dialogs QtQuick/Effects; do
     if [ -d "$_QD/$_m" ] && find "$_QD/$_m" -maxdepth 1 \( -name 'qmldir' -o -name '*.so' \) -print -quit 2>/dev/null | grep -q .; then
       :
     else
@@ -148,11 +148,21 @@ else
   done
 fi
 if [ -z "$_QMISSING" ]; then
-  ok "QtQuick QML modules (Controls/Dialogs/Effects)"
+  ok "QtQuick QML modules (Controls/Layouts/Dialogs/Effects)"
 else
-  bad "QML modules missing:$_QMISSING (translation textbox needs qt6-declarative)"
+  bad "QML modules missing:$_QMISSING (GUI + textbox need qt6-declarative)"
 fi
 unset _QD _QMISSING _m
+# GUI + textbox UI load smoke test (headless; no display needed).
+_GUI="$SCRIPT_DIR/../gui/app.py"
+if [ -f "$_GUI" ] && python3 -c "import PySide6" 2>/dev/null; then
+  if QT_QPA_PLATFORM=offscreen timeout 40 python3 "$_GUI" --self-test >/dev/null 2>&1; then
+    ok "GUI loads (QML self-test)"
+  else
+    bad "GUI self-test failed (run: anime4k-gui --diagnose; log: ~/.cache/anime4k/gui.log)"
+  fi
+fi
+unset _GUI
 _BR=""
 for _b in brave brave-browser brave-origin chromium chromium-browser google-chrome google-chrome-stable chrome microsoft-edge microsoft-edge-stable vivaldi opera; do
   _p="$(command -v "$_b" 2>/dev/null)" || continue

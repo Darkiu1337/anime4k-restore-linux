@@ -113,9 +113,9 @@ the locale on the host (`/etc/locale.gen` + `sudo locale-gen`) and retry.
   RPGMaker manifest art or shipped icon files, cached under
   `~/.cache/anime4k/icons/`. Missing sources fall back to a generic icon.
   Cached icons survive unplugged drives; delete the cache dir to refresh.
-* **File pickers** pin home, filesystem root and every mounted drive under
-  `/run/media/$USER`, and remember the last-used folder. Paths can always
-  be pasted instead.
+* **File pickers**: the GUI opens the desktop-portal dialog (Qt Quick
+  Dialogs); the TUI falls back to `zenity`. The last-used folder is
+  remembered. Paths can always be pasted into the wizard instead.
 * **Logs** belong to the selected game: switching games clears the log view.
 * **Mouse in fullscreen**: fixed-resolution titles may mis-map clicks under
   compositor fullscreen (they keep stale input geometry when scaled).
