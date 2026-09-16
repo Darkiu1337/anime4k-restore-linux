@@ -115,7 +115,7 @@ stock-bridge installs simply keep following the selection). Manual control:
   `wchar_t*`); prebuilt DLL ships as release asset `translate-v2`,
   sha256-verified at install.
 
-## Textbox on Hyprland (Click + Top)
+## Textbox on Hyprland (Float + Click + Top)
 
 * **Click** = click-through. Clicks on the text area fall through to the game
   below; hovering either bar (titlebar or toolbar) restores full input so
@@ -167,8 +167,10 @@ toolbar button opens a drawer with font, size, EN/JA colors, a soft text
 top/bottom-bar **autohide** (bars reveal when the cursor enters their edge
 strips), and corner rounding (follows the compositor's
 `decoration:rounding`, override in the drawer). All prefs persist in the
-textbox settings store. One backend ever runs (single-instance guard):
-closing the window quits it, so it can never resurrect on new text.
+textbox settings store. The launcher refuses a second backend (two would
+fight over one DeepL page); closing the window quits it, so it can never
+resurrect on new text. There is no scrollbar — the view sticks to the
+bottom and scrolls when you scroll up.
 
 ## Per-game notes
 
@@ -194,8 +196,7 @@ distro. `install.sh --check-only` audits the translate deps too.
 
 * Proton/Windows games only (hook injection needs Wine + one shared session).
 * One live session at a time (shared prefix design).
-* The Text Hooker needs live text: run Setup Text Hooker for translation,
-  then advance the game while it samples
-  (the dialog says so); thread picking by name needs the v2 bridge —
-  stock installs follow Textractor's selection instead.
+* The Text Hooker needs live text: run Setup Text Hooker for translation and
+  advance the game while it samples. Thread picking by name needs the v2
+  bridge — stock installs follow Textractor's selection instead.
 * Sentence-MT quirks: speaker names romanize inconsistently across lines.

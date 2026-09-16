@@ -45,8 +45,9 @@ take `--gpu nvidia|amd|auto`. (An early theory blamed the default adapter
 for a missed filter — that case turned out to be the Proton build — but
 pinning game+filter to the strong GPU remains the sane default.)
 
-Run `anime4k doctor` on a new machine to verify the whole chain
-(manifest, library, shaders, backends, live vkcube run) without any game.
+Run `anime4k doctor` on a new machine to verify the whole chain (manifest,
+library, shaders, GPU, runner backends, translation deps, KDE QML style, live
+vkcube run and a headless GUI self-test) without any game.
 
 ## Display servers and compositors
 

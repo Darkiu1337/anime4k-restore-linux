@@ -58,7 +58,8 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
   (e.g. Japanese VNs).
 * **VN translation** (Proton): per-game DeepL toggle — hooked Japanese dialogue
   translated live into a Luna-style textbox; composes with the filter in one
-  launch. Details: `docs/translate.md`.
+  launch. **Setup Text Hooker for translation** runs the game and opens an
+  in-app text-hook picker. Details: `docs/translate.md`.
 
 ## Use cases
 
@@ -79,13 +80,14 @@ anime4k                 # TUI  |  anime4k-gui  # Qt GUI
 Details: `requirements.md`. One shared Wine prefix lives under
 `~/.local/share/anime4k/prefixes/`; personal defaults in
 `~/.config/anime4k/config.json`. The installer symlinks `anime4k` /
-`anime4k-gui` into `~/.local/bin` and offers to add it to `PATH`.
+`anime4k-gui` (plus `vn-launch` / `vn-textbox` with translation support) into
+`~/.local/bin` and offers to add it to `PATH`.
 
 ## Troubleshooting
 
 ```sh
 anime4k doctor                 # audit the whole chain (filter, runners, translation, GUI)
-anime4k-gui --diagnose         # versions, paths, theme source, QML context validity
+anime4k-gui --diagnose         # versions, paths, style/palette, QML context validity
 anime4k-gui --self-test        # load the entire UI headlessly; fails on any QML error
 ```
 
@@ -97,12 +99,15 @@ are also appended to `~/.cache/anime4k/gui.log`.
 ## Layout
 
 * `scripts/` — TUI + per-runner launchers
-* `core/` — shared library: store, command building, process mgmt, detection,
-  icons, theme (imported by TUI, GUI and textbox; `python3 -m core launch`)
+* `core/` — Qt-free shared library: store, command building, process mgmt,
+  detection, icons (imported by TUI/GUI/textbox). `python3 -m core
+  <launch|add|set|tset|remove|gpus>` is the TUI's write path (one store,
+  backups, validation).
 * `gui/` — Qt Quick frontend (`app.py` bootstrap + `qml/` screens)
 * `translate/` — VN translation: hook launcher, DeepL bridge, Luna-style textbox
 * `shaders/` — ported `.fx` files + `gen_restore_fx.py` port generator
-* `docs/` — `limits.md` (constraints), `assets/` (gallery + usage video)
+* `docs/` — `limits.md` (constraints), `translate.md` (VN translation
+  manual), `assets/` (gallery + usage video)
 
 ## Attributions
 

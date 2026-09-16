@@ -35,7 +35,8 @@ Fedora: `meson ninja-build glslang spirv-headers vulkan-headers`).
 ## GUI (PySide6 + Qt Quick)
 
 The launcher GUI and the translation textbox are both Qt Quick (QML). Prefer
-the system package so the app follows desktop/Qt theming (qt6ct etc.):
+the system package; the app follows the desktop via the KDE colour scheme
+(kdeglobals) and the Quick Controls style below:
 
 | Distro | Install |
 |---|---|
