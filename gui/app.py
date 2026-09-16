@@ -90,6 +90,12 @@ class GamesModel(QAbstractListModel):
                 return i
         return -1
 
+    @Slot(int, result=str)
+    def gidAt(self, index):
+        if 0 <= index < len(self._rows):
+            return self._rows[index]["gid"]
+        return ""
+
 
 class GuiBackend(QObject):
     statusChanged = Signal()
@@ -632,6 +638,10 @@ def self_test(backend, model, theme, window, warnings, qml_errors=None):
     assert isinstance(backend.listGpus(), list) and backend.listGpus()
     assert json.loads(backend.runnersJson()).get("proton")
     assert window is not None, "Main.qml must create a root window"
+    if store.load_games():
+        assert window.property("gid"), "first game must be auto-selected"
+    else:
+        assert window.property("gid") == "", "empty library must select nothing"
     assert not warnings, f"QML warnings: {warnings[:3]}"
     print("self-test: ALL OK")
 
@@ -659,6 +669,27 @@ def _diagnose(app, engine, theme, model, backend):
         except Exception:
             valid = obj is not None
         print(f"contextProperty {name!r}: {type(obj).__name__} valid={valid}")
+    roots = engine.rootObjects()
+    if roots:
+        win = roots[0]
+        print("qt window size:", win.width(), "x", win.height(), "pos:", win.position())
+        try:
+            scr = win.screen()
+            print("screen:", scr.name(), scr.size().width(), "x",
+                  scr.size().height(), "dpr:", scr.devicePixelRatio())
+        except Exception as e:
+            print("screen: n/a", e)
+    try:
+        import subprocess
+        out = subprocess.run(["hyprctl", "clients", "-j"], capture_output=True,
+                             text=True, timeout=5).stdout
+        for c in json.loads(out):
+            if c.get("pid") == os.getpid() or "Anime4K" in (c.get("title") or ""):
+                print("hypr client:", repr(c.get("title")), "at", c.get("at"),
+                      "size", c.get("size"), "scale", c.get("scale"),
+                      "floating", c.get("floating"))
+    except Exception as e:
+        print("hyprctl: n/a", e)
     print("runtime qml errors:", len(QML_ERRORS))
     for e in QML_ERRORS[:5]:
         print("  ", e)

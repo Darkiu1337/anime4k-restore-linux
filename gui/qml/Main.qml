@@ -20,9 +20,26 @@ ApplicationWindow {
             logView.append("— launch to populate logs —\n")
     }
 
+    function selectIndex(i) {
+        root.gid = (i >= 0 && i < gameList.count) ? gamesModel.gidAt(i) : ""
+        refreshDetails()
+    }
+
+    function ensureSelection() {
+        if (gameList.count === 0) {
+            selectIndex(-1)
+        } else if (gameList.currentIndex < 0) {
+            gameList.currentIndex = 0
+        } else {
+            selectIndex(gameList.currentIndex)
+        }
+    }
+
     function err(text) {
         promptDlg.ask("Notice", text, ["OK"], "local")
     }
+
+    Component.onCompleted: ensureSelection()
 
     menuBar: MenuBar {
         Menu {
@@ -55,13 +72,11 @@ ApplicationWindow {
                 clip: true
                 model: gamesModel
                 highlight: Rectangle { color: theme.hover; radius: 4 }
+                onCurrentIndexChanged: root.selectIndex(currentIndex)
+                onCountChanged: root.ensureSelection()
                 delegate: ItemDelegate {
                     width: gameList.width
-                    onClicked: {
-                        gameList.currentIndex = index
-                        root.gid = model.gid
-                        refreshDetails()
-                    }
+                    onClicked: gameList.currentIndex = index
                     contentItem: RowLayout {
                         spacing: 8
                         Image {
@@ -228,21 +243,14 @@ ApplicationWindow {
         function onLogAppended(line) { logView.append(line); logView.cursorPosition = logView.length }
         function onLogCleared() { logView.clear() }
         function onPrompt(title, text, buttons) { promptDlg.ask(title, text, JSON.parse(buttons)) }
-        function onGamesChanged() {
-            if (root.gid !== "" && gamesModel.index_of(root.gid) < 0)
-                root.gid = ""
-            refreshDetails()
-        }
+        function onGamesChanged() { root.ensureSelection() }
     }
 
     Connections {
         target: promptDlg
         function onDone(result) {
-            if (promptDlg.tag === "delete" && result === 0 && root.gid !== "") {
+            if (promptDlg.tag === "delete" && result === 0 && root.gid !== "")
                 backend.removeGame(root.gid)
-                root.gid = ""
-                refreshDetails()
-            }
         }
     }
 
