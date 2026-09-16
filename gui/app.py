@@ -17,9 +17,29 @@ from core.theme_qt import Theme
 
 from PySide6.QtCore import (QAbstractListModel, QModelIndex, QObject, Qt,
                             QProcess, QProcessEnvironment, QTimer, QUrl,
-                            Signal, Slot, Property)
+                            Signal, Slot, Property, qInstallMessageHandler)
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtQml import QQmlApplicationEngine
+
+QML_ERRORS = []
+
+
+def _capture_qt_messages(mode, context, message):
+    text = str(message)
+    if ".qml:" in text or "TypeError" in text or "ReferenceError" in text \
+            or "is not defined" in text:
+        QML_ERRORS.append(text)
+        sys.stderr.write("[qml] " + text + "\n")
+        sys.stderr.flush()
+
+
+def _log_path():
+    d = os.path.expanduser("~/.cache/anime4k")
+    try:
+        os.makedirs(d, exist_ok=True)
+    except OSError:
+        return None
+    return os.path.join(d, "gui.log")
 
 
 class GamesModel(QAbstractListModel):
@@ -592,8 +612,10 @@ class GuiBackend(QObject):
         self._theme.apply_override(base.get("gui.theme", "System"))
 
 
-def self_test(backend, model, theme, window, warnings):
+def self_test(backend, model, theme, window, warnings, qml_errors=None):
     assert model.rowCount() == len(store.load_games()), "model must mirror the library"
+    assert qml_errors is not None and not qml_errors, \
+        f"runtime QML errors: {qml_errors[:3]}"
     assert backend.previewCommand("__no_such_game__") == ""
     assert backend.validateGame("not json") != ""
     assert backend.validateGame(json.dumps({"name": "x", "runner": "proton", "path": "/nope"})) != ""
@@ -614,17 +636,47 @@ def self_test(backend, model, theme, window, warnings):
     print("self-test: ALL OK")
 
 
+def _diagnose(app, engine, theme, model, backend):
+    print("python:", sys.version.split()[0])
+    try:
+        from PySide6 import __version__ as pv
+        from PySide6.QtCore import qVersion
+        print("pyside:", pv, "qt:", qVersion())
+    except Exception:
+        pass
+    print("app_dir:", APP_DIR)
+    print("qml_dir:", os.path.join(APP_DIR, "qml"))
+    print("platform:", QGuiApplication.platformName())
+    print("theme source:", theme.source, "scheme:", theme.scheme, "bg:", theme.bg)
+    print("games:", model.rowCount())
+    print("roots:", len(engine.rootObjects()))
+    ctx = engine.rootContext()
+    for name in ("theme", "backend", "gamesModel"):
+        obj = ctx.contextProperty(name)
+        valid = False
+        try:
+            valid = obj is not None and obj.property("objectName") is not None
+        except Exception:
+            valid = obj is not None
+        print(f"contextProperty {name!r}: {type(obj).__name__} valid={valid}")
+    print("runtime qml errors:", len(QML_ERRORS))
+    for e in QML_ERRORS[:5]:
+        print("  ", e)
+
+
 def main():
     app = QGuiApplication(sys.argv)
     app.setApplicationName("Anime4K Launcher")
+    qInstallMessageHandler(_capture_qt_messages)
     engine = QQmlApplicationEngine()
     qml_warnings = []
     engine.warnings.connect(lambda w: qml_warnings.extend(str(x) for x in w))
-    theme = Theme()
+    theme = Theme(app)
     theme.apply_override(store.load_config().get("gui.theme", "System"))
-    model = GamesModel()
+    model = GamesModel(app)
     model.refresh()
-    backend = GuiBackend(model, theme)
+    backend = GuiBackend(model, theme, app)
+    app._qml_objects = (theme, model, backend)
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("gamesModel", model)
     engine.rootContext().setContextProperty("theme", theme)
@@ -634,20 +686,33 @@ def main():
     except Exception:
         engine.rootContext().setContextProperty("fontFamilies", [])
     engine.load(QUrl.fromLocalFile(os.path.join(APP_DIR, "qml", "Main.qml")))
+    for _ in range(20):
+        app.processEvents()
+    diagnose = "--diagnose" in sys.argv[1:]
+    if diagnose:
+        _diagnose(app, engine, theme, model, backend)
+    if qml_warnings or QML_ERRORS:
+        logp = _log_path()
+        if logp:
+            try:
+                with open(logp, "a", encoding="utf-8") as f:
+                    f.write(f"--- {__import__('datetime').datetime.now()}\n")
+                    for e in list(qml_warnings) + list(QML_ERRORS):
+                        f.write(str(e) + "\n")
+            except OSError:
+                pass
     if "--self-test" in sys.argv[1:]:
         roots = engine.rootObjects()
         try:
-            self_test(backend, model, theme, roots[0] if roots else None, qml_warnings)
+            self_test(backend, model, theme, roots[0] if roots else None,
+                      qml_warnings, QML_ERRORS)
         except AssertionError as e:
             print(f"self-test FAILED: {e}")
-            for w in qml_warnings[:5]:
+            for w in list(qml_warnings)[:5] + list(QML_ERRORS)[:5]:
                 print("qml:", w)
             sys.exit(3)
-        if qml_warnings:
-            print("self-test FAILED: QML warnings:")
-            for w in qml_warnings[:5]:
-                print("qml:", w)
-            sys.exit(3)
+        sys.exit(0)
+    if diagnose:
         sys.exit(0)
     if not engine.rootObjects():
         sys.exit(1)

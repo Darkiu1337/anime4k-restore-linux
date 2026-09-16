@@ -1082,12 +1082,13 @@ def main():
     engine = QQmlApplicationEngine()
     qml_errors = []
     engine.warnings.connect(lambda w: qml_errors.extend(w))
-    backend = Backend()
+    backend = Backend(app)
     args = sys.argv[1:]
     if "--thread" in args and args.index("--thread") + 1 < len(args):
         backend.thread = args[args.index("--thread") + 1]
-    theme = Theme()
+    theme = Theme(app)
     theme.apply_override(core_store.load_config().get("gui.theme", "System"))
+    app._qml_objects = (backend, theme)
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("pairModel", backend.pairs)
     engine.rootContext().setContextProperty("theme", theme)

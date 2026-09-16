@@ -13,6 +13,7 @@ Dialog {
     property string proton: ""
     property string layerDir: ""
     property string themeName: "System"
+    property var themeOptions: ["System", "Omarchy", "dark", "light"]
 
     function load() {
         var cfg = JSON.parse(backend.loadSettings())
@@ -67,7 +68,13 @@ Dialog {
         ComboBox {
             id: themeCombo
             Layout.fillWidth: true
-            model: ["System", "dark", "light"]
+            model: root.themeOptions
+        }
+        Label {
+            text: theme.source === "builtin" ? "" : "active: " + theme.source
+            color: theme.subtext
+            font.pointSize: 8
+            Layout.columnSpan: 2
         }
         Label {
             text: "Saved. Prefix/Proton/layer changes apply to the next launch."

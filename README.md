@@ -46,6 +46,9 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
   executables (Vulkan direct, OpenGL via Zink).
 * **Per-game library** (TUI + Qt Quick GUI sharing one JSON store): variant,
   GPU, fps cap, overlay, locale, prefix mode.
+* **Theme**: the GUI and the translation textbox follow your active
+  **Omarchy** color scheme (or the desktop's dark/light preference); override
+  in Settings.
 * **Game detection**: engine sniffing pre-selects the runner.
 * **Frame caps everywhere**: DXVK on Proton, MangoHud elsewhere; optional
   overlay readout.
