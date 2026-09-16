@@ -6,6 +6,7 @@ Dialog {
     id: root
     modal: true
     width: 440
+    height: contentItem.implicitHeight + topPadding + bottomPadding
     padding: 16
     anchors.centerIn: parent
     standardButtons: Dialog.NoButton
@@ -32,19 +33,19 @@ Dialog {
         }
     }
 
-    ColumnLayout {
-        spacing: 12
+    contentItem: Column {
         width: availableWidth
+        spacing: 12
         Label {
             text: root.body
+            width: parent.width
             wrapMode: Text.Wrap
-            Layout.fillWidth: true
         }
         Repeater {
             model: root.options
             Btn {
                 text: modelData
-                Layout.fillWidth: true
+                width: parent.width
                 onClicked: { root.choice = index; root.close() }
             }
         }
