@@ -102,7 +102,6 @@ ApplicationWindow {
                 clip: true
                 model: pairModel
                 spacing: 6
-                ScrollBar.vertical: ScrollBar {}
                 // Stick-to-bottom latch (see docs/translate.md).
                 property bool stickBottom: true
                 property real lastY: 0
