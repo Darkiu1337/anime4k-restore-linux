@@ -10,20 +10,23 @@ Luna-style textbox — composed with the Restore filter in a single launch.
    `anime4k edit` → `translate`. Proton/Windows games only.
 2. **First run (Setup)**: `Setup…` in the GUI (or `anime4k` launch, which
    auto-uses setup while no hook is recorded). Textractor opens **already
-   attached** to the game with the saved-thread list loaded. Advance the
-   game text, then either:
+   attached** to the game with the saved-thread list loaded, and the textbox
+   opens alongside following Textractor's selection — so you see live
+   translation while picking. Advance the game text, then either:
    - click the story thread in Textractor and press **Save hook(s)** — the
      hook code is harvested into the game entry automatically at session
      end (nothing is copied by hand), or
    - use **Pick thread…** in the GUI: it samples every live thread from
      the bridge (name + last line) and you click the story thread — no
      Textractor interaction at all.
-3. **Daily play**: `Translate` (Textractor hidden). The recorded hook
-   auto-inserts (seeded into Textractor's SavedHooks), the textbox follows
-   the recorded thread. Open the Textbox (`vn-textbox` or the GUI button)
-   and read; it toggles EN-only / JA+EN.
+3. **Daily play**: `Translate` (Textractor hidden — the only difference from
+   Setup; the recorded hook auto-inserts all the same). The textbox opens
+   with it, following the recorded thread. It toggles EN-only / JA+EN. The
+   standalone Textbox button just re-opens the reader onto a live session.
 4. **End**: Stop in the UI (or Ctrl-C); `--stop` also drops the wineserver
-   so the next launch boots fresh.
+   so the next launch boots fresh. Stop ends the whole session: game hooks,
+   textbox backend, and its isolated DeepL browser (a backend left running
+   would keep translating and re-show on new text).
 
 ## Architecture (one picture)
 

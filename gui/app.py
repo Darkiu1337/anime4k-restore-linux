@@ -652,6 +652,43 @@ def textbox_pids():
     return [p for p in (x.strip() for x in out.splitlines()) if p]
 
 
+def _translate_cdp_profile():
+    """(full path, basename) of the isolated translator-browser profile.
+    Never the real browser profile — automation always gets its own dir."""
+    try:
+        with open(os.path.join(TRANSLATE_DIR, "config.json"), encoding="utf-8") as f:
+            prof = (json.load(f) or {}).get("brave_profile", "")
+    except (OSError, ValueError):
+        prof = ""
+    prof = os.path.expanduser(os.path.expandvars(
+        prof or "~/.cache/vn-translate/brave-cdp-profile"))
+    base = os.path.basename(prof.rstrip("/")) or "brave-cdp-profile"
+    return prof, base
+
+
+def _textbox_brave_pattern():
+    """pkill -f pattern matching ONLY translator browsers: the isolated
+    profile marker in the cmdline, whatever the binary (brave/chromium/
+    chrome/edge/...). A normal browser never carries this path."""
+    _, base = _translate_cdp_profile()
+    esc = "".join(("\\" + ch) if ch in ".+*?()[]{}^$|\\" else ch for ch in base)
+    if esc and esc[0].isalnum():
+        return f"user-data-dir=[^ ]*[{esc[0]}]{esc[1:]}"
+    return f"user-data-dir=[^ ]*{esc}"
+
+
+def _kill_textbox_group(proc, sig):
+    """Signal the textbox process group (backend + translator browser it
+    spawned). Returns True if a live group was signaled."""
+    try:
+        if proc is None or proc.poll() is not None:
+            return False
+        os.killpg(os.getpgid(proc.pid), sig)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
 def translate_wedge_pids(game_base=""):
     """PIDs of wedged translate containers: umu-run ... hook .vbs older than
     ~3 min while no game/hooker process lives and the bridge is down.
@@ -695,6 +732,7 @@ class MainWindow(QMainWindow):
         self.resize(1000, 650)
         self.proc = None
         self._running_gid = None
+        self.textbox_proc = None
 
         menu = self.menuBar().addMenu("File")
         act_settings = QAction("Settings…", self)
@@ -1097,6 +1135,11 @@ class MainWindow(QMainWindow):
         self._running_gid = gid
         self._running_translate = True
         self._setup_session = setup
+        # The readout belongs to the session: play gets game + textbox +
+        # browser in one click; setup additionally shows Textractor, and the
+        # textbox (following selection until a thread is recorded) verifies
+        # translation live while picking. Refuses if one already runs.
+        self.open_textbox()
 
     def pick_thread(self):
         """Sample live vn-bridge v2 threads and store the chosen one as
@@ -1218,12 +1261,13 @@ class MainWindow(QMainWindow):
         except OSError:
             logf = _sp.DEVNULL
         try:
-            _sp.Popen(argv, stdout=logf, stderr=logf,
-                      stdin=_sp.DEVNULL, start_new_session=True)
+            self.textbox_proc = _sp.Popen(argv, stdout=logf, stderr=logf,
+                                          stdin=_sp.DEVNULL, start_new_session=True)
             self.log_view.append("textbox: started (stderr -> ~/.cache/anime4k/textbox.log)")
         except (OSError, _sp.SubprocessError) as e:
             # Log the real reason (e.g. missing exec bit): the generic
             # warning alone once hid a Permission denied.
+            self.textbox_proc = None
             self.log_view.append(f"textbox: could not open ({e})")
             QMessageBox.warning(self, "Textbox", f"Could not open the translation window:\n{e}")
 
@@ -1245,22 +1289,44 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "Resolved command", " ".join(argv))
 
     def stop_game(self):
+        import signal as _sig
         if self.proc is not None:
             self.log_view.append("stopping…")
             self.proc.terminate()
-            QTimer.singleShot(3000, self._force_stop)
+        # The textbox backend owns the translator + its browser; end them
+        # with the session or the browser orphans and the box resurrects.
+        if self.textbox_proc is not None and self.textbox_proc.poll() is None:
+            self.log_view.append("stopping translation readout…")
+            _kill_textbox_group(self.textbox_proc, _sig.SIGTERM)
+        QTimer.singleShot(3000, self._force_stop)
 
     def _force_stop(self):
+        import signal as _sig
         if self.proc is None:
-            return
-        if self.proc.state() != QProcess.NotRunning:
+            pass
+        elif self.proc.state() != QProcess.NotRunning:
             self.proc.kill()
-        gid = getattr(self, "_running_gid", None)
-        if gid:
-            game = load_games().get(gid)
-            if game:
-                if kill_strays(stray_token(game)):
-                    self.log_view.append("cleaned stray processes.")
+        if self.proc is not None:
+            gid = getattr(self, "_running_gid", None)
+            if gid:
+                game = load_games().get(gid)
+                if game:
+                    if kill_strays(stray_token(game)):
+                        self.log_view.append("cleaned stray processes.")
+        if self.textbox_proc is not None:
+            if self.textbox_proc.poll() is None:
+                _kill_textbox_group(self.textbox_proc, _sig.SIGKILL)
+                self.log_view.append("translation readout stopped.")
+            self.textbox_proc = None
+        # Orphaned translator browsers (backend died without cleanup): only
+        # the isolated CDP profile ever matches — real browsers are safe.
+        try:
+            r = subprocess.run(["pkill", "-f", _textbox_brave_pattern()],
+                               capture_output=True, timeout=10)
+            if r.returncode == 0:
+                self.log_view.append("translator browser stopped.")
+        except (OSError, subprocess.SubprocessError):
+            pass
 
     def _read_log(self):
         if self.proc is not None:
