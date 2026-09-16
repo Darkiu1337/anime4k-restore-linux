@@ -1,15 +1,8 @@
 #!/usr/bin/env python3
 """textbox.py — Luna-style translation readout (Qt Quick frontend).
-
-Scrolling JA/EN history with live-bound styling (font family/size, EN/JA/
-shadow colors, shadow toggle, panel opacity, chrome autohide, corner radius
-matching the compositor); keep-on-top w/ workspace-aware Hyprland pin,
-hover-aware click-through, auto-hide, copy, re-translate; geometry + prefs
-persist via QSettings. Embedded pipeline: hook thread -> translator thread
--> GUI-thread model. The Style toolbar button opens a drawer with native
-font/color dialogs bound to the same backend properties.
 Usage: textbox.py [--smoke-test] [--self-test] [--start-workers]
   [--thread NAME|NUM|*]
+Window behavior: see docs/translate.md (Textbox on Hyprland).
 """
 import json
 import os
@@ -25,8 +18,12 @@ from PySide6.QtGui import QGuiApplication, QRegion, QColor
 from PySide6.QtQml import QQmlApplicationEngine
 
 HERE = os.path.dirname(os.path.realpath(__file__))
+REPO_ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
+sys.path.insert(0, REPO_ROOT)
 from cfg import load_config
+from core import process as core_process, store as core_store
+from core.theme_qt import Theme
 CONFIG = load_config()
 ORG, APP = "vn-translate", "textbox"
 
@@ -79,9 +76,7 @@ class PairModel(QAbstractListModel):
 
 
 def _css_color(v, fallback):
-    """Normalize anything QML hands over (QColor, "#rrggbb") to a CSS hex
-    string. A bare str(QColor) yields "PySide6...fromRgbF(...)" garbage that
-    QML can never parse back — which silently broke every color picker."""
+    # str(QColor) is garbage; use .name() (see HANDOFF.md QML specifics).
     try:
         if isinstance(v, QColor):
             return v.name()
@@ -234,8 +229,6 @@ class Backend(QObject):
 
     @staticmethod
     def _query_compositor_radius():
-        """Hyprland's decoration rounding so the box matches the compositor
-        border (square stays square). None when not on Hyprland/parse fails."""
         try:
             import subprocess as _sp
             out = _sp.run(["hyprctl", "getoption", "decoration:rounding"],
@@ -266,12 +259,7 @@ class Backend(QObject):
             return None
 
     def pin_tick(self):
-        """Enforce Top semantics against the compositor, ~1s cadence:
-        pinned while Top is on AND we are on the box's home workspace;
-        unpinned everywhere else (stays put, normal stacking, freely
-        movable). Home is adopted on first sight and whenever the box moves
-        (only the user can move it). Dispatches only on mismatch. Never
-        raises: this runs on a timer."""
+        # Workspace-aware Top enforcement, ~1s (see docs/translate.md).
         try:
             if (not shutil.which("hyprctl")
                     or not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")):
@@ -293,14 +281,7 @@ class Backend(QObject):
             ws = (me.get("workspace") or {}).get("id")
             if ws is None:
                 return
-            # Home adoption, follow-proof: a PINNED box moves workspaces on
-            # its own (it follows the active workspace), so adoption happens
-            # only on a workspace EDGE (ws differs from last poll) while
-            # unpinned. A persistent mismatch with no edge is follow-residue
-            # (or a stale observation) and must never re-arm the trap: the
-            # old level-trigger re-adopted every tick and re-pinned forever.
-            # Moving a pinned box by hand still needs a Top toggle to re-home
-            # (toggleTop clears home).
+            # Edge-triggered home adoption only (see docs/translate.md).
             last_pinned = getattr(self, "_last_pinned", None)
             prev_ws = getattr(self, "_last_ws", None)
             if ws != self._home_ws:
@@ -322,11 +303,7 @@ class Backend(QObject):
                     subprocess.run(["hyprctl", "dispatch",
                                     'hl.dsp.window.bring_to_top({window="title:^vn-translate$"})'],
                                    capture_output=True, timeout=5)
-                # NOTE: never move the window back home here. A workspace
-                # move makes the compositor flip the ACTIVE workspace to
-                # follow it, which fights the user and loops forever. Residue
-                # on a foreign ws simply stays put (unpinned, out of the
-                # way) until they return home, which repins it into view.
+                # Never move the window (see docs/translate.md).
         except Exception:
             pass
 
@@ -374,13 +351,8 @@ class Backend(QObject):
 
     @Slot(float, float, bool)
     def pointerAt(self, x, y, inside):
-        """Window-local pointer position from the QML hover handler.
-
-        Event-driven on purpose: QCursor.pos() is unreliable on Wayland (no
-        global pointer query — Qt returns stale/(0,0)), and frameGeometry()
-        is (0,0)-based there for the same reason. The compositor-true event
-        coordinates are the only trustworthy source.
-        """
+        # Event coords only; cursor/geometry queries are dead on Wayland
+        # (see HANDOFF.md QML specifics).
         inside = bool(inside)
         self._pointer_inside = inside
         strip = False
@@ -402,8 +374,6 @@ class Backend(QObject):
 
     @Slot(bool)
     def setDrawerOpen(self, opened):
-        # An open Style drawer covers the text area: force full input so its
-        # controls stay clickable under click-through, and keep chrome shown.
         self._drawer_open = bool(opened)
         self._mask_applied = None
         self.apply_input_mask()
@@ -420,16 +390,8 @@ class Backend(QObject):
     def apply_flags(self, initial=False):
         if self._window is None:
             return
-        # Click-through architecture (Wayland, protocol-proven): the input
-        # MASK ALONE controls everything — Qt.WindowTransparentForInput is
-        # never set, because while it is set Qt silently drops every mask
-        # update (4 consecutive setMask calls, zero protocol traffic).
-        # Click ON = bars-only mask (text area falls through, chrome stays
-        # clickable so the mode is always reversible); click OFF = null mask
-        # (compositor reads null as full input). No flag ever changes for
-        # click toggles, so no surface is ever recreated and masks always
-        # land on a stable surface. X11 keeps flag-follows-hover (a mask
-        # would clip the visuals there; surface ops are synchronous anyway).
+        # Bars-only mask architecture (see docs/translate.md); never
+        # WindowTransparentForInput on Wayland (drops all mask updates).
         if self._on_wayland():
             want_transparent = False
         else:
@@ -448,8 +410,6 @@ class Backend(QObject):
         self.clickThroughChanged.emit()
 
     def chrome_region(self):
-        """Bars-only input region (window coords) for the click-through
-        guard. Bar heights come from QML; width from the live window."""
         try:
             w = self._window.width() if self._window is not None else 0
             h = self._window.height() if self._window is not None else 0
@@ -486,9 +446,6 @@ class Backend(QObject):
                 key = ("full", ())
         except Exception:
             return
-        # Masks only change on a stable surface now (click toggles never touch
-        # flags), so the key guard is sound; force covers the one remaining
-        # recreation path (keepontop toggle).
         if force or key != getattr(self, "_mask_applied", None):
             self._mask_applied = key
             try:
@@ -506,9 +463,6 @@ class Backend(QObject):
         return self._chrome_hovered
 
     def hover_tick(self):
-        # Mask transitions only. All hover knowledge is event-driven (QML
-        # handlers -> setChromeHovered/pointerAt); QCursor polling is dead on
-        # Wayland and must not feed this path.
         want = self.clickthrough_effective
         if want != getattr(self, "_ct_applied", None):
             self._ct_applied = want
@@ -533,13 +487,8 @@ class Backend(QObject):
     @Slot()
     def toggleTop(self):
         self._keepontop = not self._keepontop
-        # Re-arming Top adopts wherever the box is now as its new home
-        # (covers "I moved it, pin it here").
         if self._keepontop:
             self._home_ws = None
-        # keepontop toggles are the only remaining flag changes on Wayland:
-        # reset the mask keys so the next tick re-sends on the new surface,
-        # plus a timed backup.
         self._ct_applied = None
         self._mask_applied = None
         self.apply_flags()
@@ -565,8 +514,6 @@ class Backend(QObject):
             QTimer.singleShot(500, self._hyprctl_unpin)
 
     def _hyprctl_unpin(self):
-        """Top-off path (and stale-rule neutralizer): leave stacking alone,
-        just make sure nothing is pinned to all workspaces."""
         if not shutil.which("hyprctl"):
             return
         if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
@@ -579,14 +526,7 @@ class Backend(QObject):
             pass
 
     def _hyprctl_sync_top(self):
-        """Mirror keep-on-top into the compositor. Qt's StaysOnTopHint is
-        only a hint on Wayland — Hyprland restacks floating windows on focus.
-        Top therefore floats the window and raises it; it deliberately does
-        NOT pin (pin shows the window on ALL workspaces — the box must stay
-        on its spawn workspace). The pin-disable also neutralizes a stale
-        session rule that used to pin this title (static rules apply at map;
-        the explicit disable sticks). Best-effort: silently skips when not
-        on Hyprland or hyprctl fails."""
+        # Float + raise + unpin (see docs/translate.md).
         if not shutil.which("hyprctl"):
             return
         if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
@@ -607,9 +547,6 @@ class Backend(QObject):
                 pass
 
     def _hyprctl_raise(self):
-        """One-shot raise for new text (Top mode): pops the box above the
-        game without focus steal and without pinning it to all workspaces.
-        Throttled to one dispatch per 2s."""
         if not self._keepontop:
             return
         now = time.time()
@@ -631,7 +568,6 @@ class Backend(QObject):
     def toggleMode(self):
         self._show_ja = not self._show_ja
         self.showJaChanged.emit()
-        # No rerender: delegates bind visibility to showJa live.
 
     @Slot()
     def toggleAutohide(self):
@@ -647,7 +583,6 @@ class Backend(QObject):
 
     @Slot(int)
     def bumpFont(self, delta):
-        # Live-restyles the whole history via QML bindings.
         self._font_size = max(8.0, self._font_size + delta)
         self.fontSizeChanged.emit()
 
@@ -727,8 +662,6 @@ class Backend(QObject):
             self._panel_alpha = 0.88
         self._chrome_autohide = s.value("chromeautohide", False, type=bool)
         self._chrome_visible = True
-        # Corner radius follows the compositor (square stays square) unless
-        # the user overrode it in Style (persisted value wins).
         queried = self._query_compositor_radius()
         try:
             raw = s.value("cornerradius", None)
@@ -739,9 +672,8 @@ class Backend(QObject):
             self._corner_radius = queried if queried is not None else 10
         self._keepontop = s.value("keepontop", True, type=bool)
         self._autohide = s.value("autohide", False, type=bool)
-        # Restores assign backing fields directly (no per-field emit), so push
-        # every property to QML explicitly — otherwise bindings keep whatever
-        # defaults were live at engine load (e.g. radius 10 over a 0).
+        # Restores must emit notifies or bindings keep load-time defaults
+        # (see HANDOFF.md QML specifics).
         for _sig in (self.showJaChanged, self.keepOnTopChanged,
                      self.clickThroughChanged, self.autoHideChanged,
                      self.statusTextChanged, self.fontSizeChanged,
@@ -757,8 +689,6 @@ class Backend(QObject):
 
     # ---- content ----
     def append_pair(self, ja, en, record=True):
-        # Plain strings into the model; all styling is QML-bound. No HTML
-        # escaping needed (Text.PlainText delegates).
         self.pairs.append(ja or "", en or "")
         self.last_text_time = time.time()
         try:
@@ -827,21 +757,16 @@ class Backend(QObject):
                 self.statusTextChanged.emit()
 
     def poll_status(self):
-        try:
-            import websocket
-            ws = websocket.create_connection("ws://127.0.0.1:6677", timeout=3)
-            ws.close()
+        if core_process.translate_bridge_ok():
             if not self.pending:
                 self._status_text = "● live (:6677)"
                 self.statusTextChanged.emit()
-        except Exception:
+        else:
             self._status_text = "● stopped"
             self.statusTextChanged.emit()
 
 
 def self_test(backend, window):
-    """Same contract as always: rendering + interaction paths that a plain
-    window-map smoke test never touches."""
     backend.append_pair("テスト一行目", "first test line")
     backend.append_pair("二行目", "second test line")
     assert backend.pairs.rowCount() == 2, "model recorded nothing"
@@ -854,8 +779,6 @@ def self_test(backend, window):
     assert backend._show_ja == before_mode, "mode double-toggle must restore"
     backend.retranslate()
     backend.copyCurrent()
-    # Font sizing is a live binding now: bump must change the property the
-    # delegates render from.
     backend.bumpFont(1)
     assert backend._font_size == before_size + 1, "bumpFont did not change fontSize"
     backend.bumpFont(-1)
@@ -879,16 +802,12 @@ def self_test(backend, window):
     backend.hover_tick()
     assert not backend.clickthrough_effective, "bar hover must re-enable input"
     if window is not None and Backend._on_wayland():
-        # Full input is a null mask (compositor reads null as full-window).
         backend.apply_input_mask()
         assert window.mask().isEmpty(), "bar hover must restore full (null) input"
     backend._hover_override = None
     backend.toggleClickthrough()
     assert not backend.clickthrough_effective, "click-through off must restore input"
     if window is not None and Backend._on_wayland():
-        # Restore path must produce a null mask (= full input). Regression
-        # this guards: wrong QRegion constructor raised TypeError and left
-        # the chrome-only mask behind.
         backend.apply_input_mask()
         try:
             assert window.mask().isEmpty(), "click-through off must restore full (null) input"
@@ -937,8 +856,7 @@ def self_test(backend, window):
     assert backend.clickthrough_effective, "closed drawer must restore guard"
     backend._clickthrough = False
     backend._hover_override = None
-    # Chrome-autohide reveal zones, driven by event coordinates (no global
-    # cursor queries — broken on Wayland).
+    # Chrome-autohide reveal zones follow event coordinates.
     assert backend._chrome_visible is True, "chrome starts visible"
     backend._chrome_autohide = True
     backend._chrome_hovered = False
@@ -958,8 +876,7 @@ def self_test(backend, window):
     backend._chrome_autohide = False
     backend._update_chrome_visibility()
     assert backend._chrome_visible is True, "autohide off must restore chrome"
-    # Restore must push every property to QML (bindings don't re-evaluate
-    # without notify — stale defaults was a live bug, radius 10 over 0).
+    # Restore must emit all notifies (see HANDOFF.md QML specifics).
     _fired = []
     for _sig in (backend.showJaChanged, backend.keepOnTopChanged,
                  backend.clickThroughChanged, backend.autoHideChanged,
@@ -972,8 +889,7 @@ def self_test(backend, window):
         _sig.connect(lambda _s=_sig: _fired.append(_s))
     backend.restore_state()
     assert len(_fired) == 15, f"restore must emit all 15 notifies, got {len(_fired)}"
-    # Real event chain: synthetic pointer moves must reach pointerAt through
-    # the QML HoverHandler (no cursor queries involved anywhere).
+    # Synthetic hover must reach pointerAt through the QML HoverHandler.
     from PySide6.QtTest import QTest
     from PySide6.QtCore import QPoint as _QPoint
     QTest.mouseMove(window, _QPoint(10, 10))
@@ -984,14 +900,12 @@ def self_test(backend, window):
     QTest.qWait(250)
     assert backend._pointer_inside is True, "middle must still be inside"
     assert backend._pointer_strip is False, "middle must not be a reveal strip"
-    # Drawer opens offscreen without errors and reports back.
+    # Drawer must report open state.
     drawer = window.findChild(QObject, "styleDrawer")
     assert drawer is not None, "style drawer must exist"
     drawer.setProperty("visible", True)
     assert backend._drawer_open is True, "drawer must report open state"
-    # Real tap path: clicking a swatch must set its target AND open the
-    # dialog (regression: taps did nothing live while programmatic
-    # open/accept worked).
+    # Tap path: swatch tap must set target AND open the dialog.
     from PySide6.QtCore import QPointF as _QPointF
     from PySide6.QtGui import Qt as _Qt
     from PySide6.QtQuick import QQuickItem as _QQuickItem
@@ -1033,14 +947,13 @@ def self_test(backend, window):
     drawer.setProperty("visible", False)
     QTest.qWait(300)
     assert backend._drawer_open is False, "drawer must report closed state"
-    # Drawer content must leave a scrollbar lane (regression: overlay bar
-    # covered the ComboBox/SpinBox arrows).
+    # Drawer content must reserve a scrollbar lane.
     _col = window.findChild(QObject, "styleColumn")
     assert _col is not None, "style column must exist"
     _dw = drawer.property("width")
     assert abs(float(_col.property("width")) - (float(_dw) - 34.0)) < 1.0, \
         "style content must reserve a scrollbar lane"
-    # Autoscroll: overflow the view, let layout settle, must end at bottom.
+    # Autoscroll must end at bottom.
     from PySide6.QtTest import QTest as _QTest2
     _view = window.findChild(QObject, "historyView")
     assert _view is not None, "history ListView must exist"
@@ -1054,8 +967,7 @@ def self_test(backend, window):
     backend.append_pair("新規", "fresh line while scrolled up")
     _QTest2.qWait(600)
     assert float(_view.property("contentY")) < 1.0, "must not yank scrolled-up readers"
-    # Scrollbar-drag simulation: jump mid-list (no flick, no movementEnded),
-    # lines must not move us; reaching the end re-latches following.
+    # Simulated drag: lines must not move a dragged reader.
     _mid = float(_view.property("contentHeight")) / 2.0
     _view.setProperty("contentY", _mid)
     _QTest2.qWait(200)
@@ -1069,7 +981,7 @@ def self_test(backend, window):
     backend.append_pair("再開", "line after scrolling back down")
     _QTest2.qWait(600)
     assert bool(_view.property("atYEnd")), "must resume following at the end"
-    # Workspace-aware pin decision (pure logic, no compositor calls).
+    # Pin decision matrix.
     W = Backend._want_pinned
     assert W(1, 1, True) is True, "same workspace + Top must pin"
     assert W(2, 1, True) is False, "other workspace must unpin"
@@ -1078,7 +990,7 @@ def self_test(backend, window):
     # Compositor radius query degrades to None/valid-int, never raises.
     _r = Backend._query_compositor_radius()
     assert _r is None or (isinstance(_r, int) and 0 <= _r <= 16), "radius query must be None or 0..16"
-    # pin_tick with a canned compositor: adopts home, dispatches on mismatch.
+    # pin_tick with a canned compositor.
     _real_json, _real_run = backend._hyprctl_json, subprocess.run
     _calls = []
     try:
@@ -1107,8 +1019,7 @@ def self_test(backend, window):
         backend.pin_tick()
         assert any("action=\"disable\"" in str(c) for c in _calls), \
             "leaving home must dispatch pin disable"
-        # Follow-residue must NOT be adopted as a new home: box still pinned
-        # from the previous poll, seen on a new workspace.
+        # Follow-residue must not re-adopt home.
         _calls.clear()
         backend._home_ws = 1
         backend._last_pinned = True
@@ -1123,9 +1034,7 @@ def self_test(backend, window):
         assert not any("move" in str(c) for c in _calls), \
             "must never move windows: the compositor flips the active " \
             "workspace to follow the move, looping forever"
-        # The trap this guards: persistent mismatch must NOT re-adopt on
-        # later ticks (old level-trigger re-pinned forever ~2 ticks later).
-        # The mock world applies our disables from here on.
+        # Stable mismatch must never re-adopt.
         _world = {"pinned": True, "ws": 2, "active": 2}
         backend._hyprctl_json = lambda *a: (
             [{"pid": os.getpid(), "workspace": {"id": _world["ws"]},
@@ -1148,8 +1057,7 @@ def self_test(backend, window):
         assert backend._home_ws == 1, "stable mismatch must never re-adopt"
         assert _world["pinned"] is False, "stable mismatch must stay unpinned"
         subprocess.run = _orig_run
-        # Genuine user move (was unpinned) adopts the new home. Simulate
-        # the edge: last poll saw it on ws1, now it is on ws2.
+        # Genuine user move adopts the new home.
         _calls.clear()
         backend._last_ws = 1
         backend._last_pinned = False
@@ -1159,7 +1067,7 @@ def self_test(backend, window):
             if a == ("clients",) else {"id": 1})
         backend.pin_tick()
         assert backend._home_ws == 2, "user move must adopt the new home"
-        # Re-arming Top adopts wherever the box currently is.
+        # Top re-enable clears home.
         backend._keepontop = False
         backend.toggleTop()
         assert backend._keepontop is True and backend._home_ws is None, \
@@ -1178,8 +1086,11 @@ def main():
     args = sys.argv[1:]
     if "--thread" in args and args.index("--thread") + 1 < len(args):
         backend.thread = args[args.index("--thread") + 1]
+    theme = Theme()
+    theme.apply_override(core_store.load_config().get("gui.theme", "System"))
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("pairModel", backend.pairs)
+    engine.rootContext().setContextProperty("theme", theme)
     try:
         from PySide6.QtGui import QFontDatabase
         engine.rootContext().setContextProperty(

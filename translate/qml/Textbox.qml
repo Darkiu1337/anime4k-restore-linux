@@ -4,10 +4,7 @@ import QtQuick.Dialogs
 import QtQuick.Effects
 import QtQuick.Layouts
 
-// Textbox.qml — Luna-style translation readout.
-// All text styling binds to backend properties, so font size/family/color
-// changes restyle the whole history live. Window behavior (flags, input
-// masks, Hyprland pin) stays in Python on the QQuickWindow.
+// Textbox.qml — Luna-style translation readout (see docs/translate.md).
 ApplicationWindow {
     id: root
     objectName: "textboxWindow"
@@ -18,16 +15,21 @@ ApplicationWindow {
     color: "transparent"
     flags: Qt.FramelessWindowHint | Qt.Tool
 
+    function withAlpha(hex, a) {
+        var h = ("0" + Math.round(Math.min(1, Math.max(0, a)) * 255).toString(16)).slice(-2)
+        return "#" + h + hex.slice(1)
+    }
+
     component BarButton : ToolButton {
         property string tip: ""
         font.pointSize: 9
-        palette.buttonText: "#cfcfcf"
+        palette.buttonText: theme.text
         ToolTip.text: tip
         ToolTip.visible: hovered && tip.length > 0
         ToolTip.delay: 500
         background: Rectangle {
             radius: 5
-            color: checked ? "#3c7fb3ff" : (hovered ? "#1cffffff" : "transparent")
+            color: checked ? theme.accent : (hovered ? theme.hover : "transparent")
         }
     }
 
@@ -35,11 +37,8 @@ ApplicationWindow {
         id: panel
         anchors.fill: parent
         radius: backend.cornerRadius
-        color: Qt.rgba(0.11, 0.11, 0.125, backend.panelAlpha)
+        color: withAlpha(theme.panel, backend.panelAlpha)
 
-        // Window-level pointer tracking for chrome autohide reveal zones.
-        // Event coordinates are compositor-true; global cursor queries are
-        // unreliable on Wayland and must not be used here.
         HoverHandler {
             onHoveredChanged: backend.pointerAt(-1, -1, hovered)
             onPointChanged: backend.pointerAt(point.position.x, point.position.y, true)
@@ -55,10 +54,9 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: titleRow.implicitHeight + 4
                 visible: backend.chromeVisible
-                color: Qt.rgba(0.188, 0.188, 0.22, backend.panelAlpha)
+                color: withAlpha(theme.panelAlt, backend.panelAlpha)
                 topLeftRadius: backend.cornerRadius
                 topRightRadius: backend.cornerRadius
-                // Square off the bottom corners where it meets the history.
                 Rectangle {
                     anchors.left: parent.left
                     anchors.right: parent.right
@@ -87,7 +85,7 @@ ApplicationWindow {
 
                     Label {
                         text: "vn-translate"
-                        color: "#cfcfcf"
+                        color: theme.text
                         font.pointSize: 9
                         Layout.fillWidth: true
                     }
@@ -108,17 +106,13 @@ ApplicationWindow {
                 model: pairModel
                 spacing: 6
                 ScrollBar.vertical: ScrollBar {}
-                // Stick-to-bottom, chat-style: latched at line-arrival time
-                // (atYEnd is meaningless mid-layout, once growth already
-                // flipped it). Growth then tracks the latch; user flicks
-                // re-arm it. Reading history never gets yanked.
+                // Stick-to-bottom latch (see docs/translate.md).
                 property bool stickBottom: true
                 property real lastY: 0
                 onCountChanged: { stickBottom = atYEnd; if (stickBottom) positionViewAtEnd(); }
                 onContentHeightChanged: if (stickBottom && count > 0) positionViewAtEnd()
                 onMovementEnded: stickBottom = atYEnd
-                // Scrollbar drags (and any contentY set) bypass movementEnded:
-                // any user move UP unlatches, reaching the end re-latches.
+
                 onContentYChanged: {
                     if (contentY < lastY - 1) stickBottom = false;
                     else if (atYEnd) stickBottom = true;
@@ -130,9 +124,6 @@ ApplicationWindow {
                     spacing: 2
                     leftPadding: 8
                     rightPadding: 8
-                    // Per-line shadow wrappers: each MultiEffect covers one
-                    // TextEdit (single source), so anchors stay sibling-legal
-                    // and text remains selectable.
                     Item {
                         width: parent.width - 16
                         height: jaEdit.contentHeight
@@ -199,7 +190,7 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.preferredHeight: toolRow.implicitHeight + 6
                 visible: backend.chromeVisible
-                color: Qt.rgba(0.157, 0.157, 0.18, backend.panelAlpha)
+                color: withAlpha(theme.panelAlt, backend.panelAlpha)
                 bottomLeftRadius: backend.cornerRadius
                 bottomRightRadius: backend.cornerRadius
                 Rectangle {
@@ -238,7 +229,7 @@ ApplicationWindow {
                     BarButton { text: "Style"; tip: "Text and window style"; onClicked: styleDrawer.open() }
                     Label {
                         text: backend.statusText
-                        color: "#9a9a9a"
+                        color: theme.subtext
                         font.pointSize: 8
                         Layout.fillWidth: true
                         elide: Text.ElideRight
@@ -262,15 +253,13 @@ ApplicationWindow {
         height: root.height
         edge: Qt.RightEdge
         onVisibleChanged: backend.setDrawerOpen(visible)
-        // Unstyled Controls assume a light theme; force light text on our
-        // dark drawer background (ComboBox display text especially).
-        palette.text: "#f0f0f0"
-        palette.buttonText: "#f0f0f0"
-        palette.windowText: "#9a9a9a"
-        palette.highlightedText: "#ffffff"
+        palette.text: theme.text
+        palette.buttonText: theme.buttonText
+        palette.windowText: theme.subtext
+        palette.highlightedText: theme.text
 
         background: Rectangle {
-            color: Qt.rgba(0.13, 0.13, 0.15, 0.97)
+            color: withAlpha(theme.panel, 0.97)
             radius: backend.cornerRadius
         }
 
@@ -281,14 +270,12 @@ ApplicationWindow {
 
             ColumnLayout {
                 objectName: "styleColumn"
-                // -14 reserves a lane for the overlay scrollbar so it never
-                // underlaps the ComboBox arrow / SpinBox arrows.
                 width: styleDrawer.width - 20 - 14
                 spacing: 8
 
-                Label { text: "Style"; color: "#f0f0f0"; font.pointSize: 12; font.bold: true }
+                Label { text: "Style"; color: theme.text; font.pointSize: 12; font.bold: true }
 
-                Label { text: "Font"; color: "#9a9a9a"; font.pointSize: 9 }
+                Label { text: "Font"; color: theme.subtext; font.pointSize: 9 }
                 ComboBox {
                     objectName: "fontCombo"
                     Layout.fillWidth: true
@@ -297,7 +284,7 @@ ApplicationWindow {
                     onActivated: backend.fontFamily = index === 0 ? "" : currentText
                 }
 
-                Label { text: "Size"; color: "#9a9a9a"; font.pointSize: 9 }
+                Label { text: "Size"; color: theme.subtext; font.pointSize: 9 }
                 SpinBox {
                     Layout.fillWidth: true
                     from: 8
@@ -306,7 +293,7 @@ ApplicationWindow {
                     onValueModified: backend.fontSize = value
                 }
 
-                Label { text: "Colors"; color: "#9a9a9a"; font.pointSize: 9 }
+                Label { text: "Colors"; color: theme.subtext; font.pointSize: 9 }
                 RowLayout {
                     Layout.fillWidth: true
                     spacing: 6
@@ -314,21 +301,21 @@ ApplicationWindow {
                         objectName: "enColorBtn"
                         text: "EN"
                         onClicked: { styleDrawer.colorTarget = "en"; colorDialog.open() }
-                        background: Rectangle { radius: 5; color: backend.enColor; border.color: "#9a9a9a" }
+                        background: Rectangle { radius: 5; color: backend.enColor; border.color: theme.border }
                         contentItem: Text { text: "EN"; color: "#ffffff"; style: Text.Outline; styleColor: "black"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     }
                     Button {
                         objectName: "jaColorBtn"
                         text: "JA"
                         onClicked: { styleDrawer.colorTarget = "ja"; colorDialog.open() }
-                        background: Rectangle { radius: 5; color: backend.jaColor; border.color: "#9a9a9a" }
+                        background: Rectangle { radius: 5; color: backend.jaColor; border.color: theme.border }
                         contentItem: Text { text: "JA"; color: "#ffffff"; style: Text.Outline; styleColor: "black"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     }
                     Button {
                         objectName: "shColorBtn"
                         text: "Sh"
                         onClicked: { styleDrawer.colorTarget = "shadow"; colorDialog.open() }
-                        background: Rectangle { radius: 5; color: backend.shadowColor; border.color: "#9a9a9a" }
+                        background: Rectangle { radius: 5; color: backend.shadowColor; border.color: theme.border }
                         contentItem: Text { text: "Sh"; color: "#ffffff"; style: Text.Outline; styleColor: "black"; horizontalAlignment: Text.AlignHCenter; verticalAlignment: Text.AlignVCenter }
                     }
                 }
@@ -339,7 +326,7 @@ ApplicationWindow {
                     onToggled: backend.shadowEnabled = checked
                 }
 
-                Label { text: "Background opacity: " + Math.round(backend.panelAlpha * 100) + "%"; color: "#9a9a9a"; font.pointSize: 9 }
+                Label { text: "Background opacity: " + Math.round(backend.panelAlpha * 100) + "%"; color: theme.subtext; font.pointSize: 9 }
                 Slider {
                     Layout.fillWidth: true
                     from: 0.2
@@ -349,7 +336,7 @@ ApplicationWindow {
                     onMoved: backend.panelAlpha = value
                 }
 
-                Label { text: "Corner radius: " + backend.cornerRadius + "px (compositor default)"; color: "#9a9a9a"; font.pointSize: 9 }
+                Label { text: "Corner radius: " + backend.cornerRadius + "px (compositor default)"; color: theme.subtext; font.pointSize: 9 }
                 Slider {
                     Layout.fillWidth: true
                     from: 0
@@ -370,8 +357,7 @@ ApplicationWindow {
         property string colorTarget: "en"
     }
 
-    // Window-level: Popup-type dialogs nested inside containers (drawer,
-    // scrollview) may never create their overlay — invisible but "open".
+    // Popups nested in containers may never overlay; keep dialogs window-level.
     ColorDialog {
         id: colorDialog
         objectName: "colorDialog"
