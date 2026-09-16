@@ -7,6 +7,8 @@ Dialog {
     modal: true
     width: 440
     height: contentItem.implicitHeight + topPadding + bottomPadding
+            + (implicitHeaderHeight > 0 ? implicitHeaderHeight + spacing : 0)
+            + (implicitFooterHeight > 0 ? implicitFooterHeight + spacing : 0)
     padding: 16
     anchors.centerIn: parent
     standardButtons: Dialog.NoButton
