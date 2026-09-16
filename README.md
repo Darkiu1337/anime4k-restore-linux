@@ -44,7 +44,7 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
 * **Three runners**: Proton/Windows games (D3D9–12, Vulkan), RPGMaker
   folders (MV/MZ filtered; other engines redirect), native Linux
   executables (Vulkan direct, OpenGL via Zink).
-* **Per-game library** (TUI + Qt GUI sharing one JSON store): variant,
+* **Per-game library** (TUI + Qt Quick GUI sharing one JSON store): variant,
   GPU, fps cap, overlay, locale, prefix mode.
 * **Game detection**: engine sniffing pre-selects the runner.
 * **Frame caps everywhere**: DXVK on Proton, MangoHud elsewhere; optional
@@ -80,8 +80,10 @@ Details: `requirements.md`. One shared Wine prefix lives under
 
 ## Layout
 
-* `scripts/` — TUI, shared core, per-runner launchers
-* `gui/` — PySide6 frontend (same runners, same library)
+* `scripts/` — TUI + per-runner launchers
+* `core/` — shared library: store, command building, process mgmt, detection,
+  icons, theme (imported by TUI, GUI and textbox; `python3 -m core launch`)
+* `gui/` — Qt Quick frontend (`app.py` bootstrap + `qml/` screens)
 * `translate/` — VN translation: hook launcher, DeepL bridge, Luna-style textbox
 * `shaders/` — ported `.fx` files + `gen_restore_fx.py` port generator
 * `docs/` — `limits.md` (constraints), `assets/` (gallery + usage video)
