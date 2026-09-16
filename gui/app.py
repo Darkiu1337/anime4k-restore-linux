@@ -5,9 +5,7 @@ Thin UI over scripts/../scripts runners; shares ~/.config/anime4k/games.json
 with the `anime4k` TUI. Default theme follows the system (qt6ct etc.);
 override in Settings.
 """
-import json
 import os
-import re
 import subprocess
 import sys
 
@@ -24,30 +22,37 @@ from PySide6.QtWidgets import (
 
 APP_DIR = os.path.dirname(os.path.realpath(__file__))
 REPO_ROOT = os.path.dirname(APP_DIR)
-SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
-SHADERS_DIR = os.path.join(REPO_ROOT, "shaders")
-TRANSLATE_DIR = os.path.join(REPO_ROOT, "translate")
-CONFIG_DIR = os.path.expanduser("~/.config/anime4k")
-GAMES_JSON = os.path.join(CONFIG_DIR, "games.json")
-CONFIG_JSON = os.path.join(CONFIG_DIR, "config.json")
+sys.path.insert(0, REPO_ROOT)
+from core import paths, store, library, commands, process, system, icons
 
-# Sane clean-box fallbacks (umu-managed Proton, project shared prefix).
-# Stored values are always shown as-is; these apply only when unset.
-DEFAULT_PREFIX = os.path.join(os.path.expanduser("~"), ".local/share/anime4k/prefixes/default")
-
-RUNNERS = {
-    "proton": "Windows games (D3D9-12/Vulkan filtered; OpenGL runs unfiltered)",
-    "rpgmaker": "RPGMaker dirs (MV/MZ filtered; other engines redirect)",
-    "native": "Linux executables (Vulkan direct; OpenGL via Zink; 64-bit only)",
-}
-
-VARIANT_NOTES = {
-    "L": "strongest, highest GPU cost",
-    "M": "balanced",
-    "S": "lightest, cheapest",
-    "Soft_S": "for aliased art, light",
-    "Soft_L": "for aliased art, strong",
-}
+SCRIPTS_DIR = paths.SCRIPTS_DIR
+SHADERS_DIR = paths.SHADERS_DIR
+TRANSLATE_DIR = paths.TRANSLATE_DIR
+CONFIG_DIR = paths.CONFIG_DIR
+GAMES_JSON = paths.GAMES_JSON
+CONFIG_JSON = paths.CONFIG_JSON
+DEFAULT_PREFIX = paths.DEFAULT_PREFIX
+RUNNERS = paths.RUNNERS
+VARIANT_NOTES = paths.VARIANT_NOTES
+load_games = store.load_games
+save_games = store.save_games
+load_config = store.load_config
+save_config = store.save_config
+list_variants = system.list_variants
+list_gpus = system.list_gpus
+gpu_icd = commands.gpu_icd
+stray_token = process.stray_token
+find_strays = process.find_strays
+kill_strays = process.kill_strays
+resolve_icon = icons.resolve_icon
+slugify = library.slugify
+build_command = commands.build_command
+build_translate_command = commands.build_translate_command
+translate_bridge_ok = process.translate_bridge_ok
+textbox_pids = process.textbox_pids
+translate_wedge_pids = process.translate_wedge_pids
+_kill_textbox_group = process.kill_textbox_group
+TEXTBOX_PROG = paths.TEXTBOX_PROG
 
 DARK_PALETTE = {
     QPalette.Window: QColor(53, 53, 53),
@@ -64,225 +69,6 @@ DARK_PALETTE = {
     QPalette.Highlight: QColor(42, 130, 218),
     QPalette.HighlightedText: Qt.black,
 }
-
-
-def load_json(path, default):
-    try:
-        with open(path) as f:
-            return json.load(f)
-    except (OSError, ValueError):
-        return default
-
-
-def save_json(path, data):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(data, f, indent=2)
-    os.replace(tmp, path)
-
-
-def load_games():
-    data = load_json(GAMES_JSON, {})
-    return data.get("games", {})
-
-
-def save_games(games):
-    import shutil
-    if os.path.isfile(GAMES_JSON):
-        try:
-            shutil.copyfile(GAMES_JSON, GAMES_JSON + ".bak")
-        except OSError:
-            pass
-    save_json(GAMES_JSON, {"games": games})
-
-
-def load_config():
-    return load_json(CONFIG_JSON, {})
-
-
-def save_config(cfg):
-    save_json(CONFIG_JSON, cfg)
-
-
-def list_variants():
-    """Variant names from the shader dir (auto-discovers future additions)."""
-    found = []
-    try:
-        for fn in sorted(os.listdir(SHADERS_DIR)):
-            m = re.fullmatch(r"Anime4K_Restore_(.+)\.fx", fn)
-            if m:
-                found.append(m.group(1))
-    except OSError:
-        pass
-    order = ["L", "M", "S", "Soft_S", "Soft_L"]
-    return [v for v in order if v in found] + [v for v in found if v not in order]
-
-
-def list_gpus():
-    """(display, icd-keyword) pairs; first entry is auto (= discrete GPU when detectable)."""
-    names = ["auto (discrete GPU preferred)"]
-    try:
-        out = subprocess.run(["vulkaninfo", "--summary"], capture_output=True,
-                             text=True, timeout=15).stdout
-        seen = set()
-        for line in out.splitlines():
-            m = re.search(r"deviceName\s*=\s*(.+)", line)
-            if m:
-                name = m.group(1).strip()
-                if name and name not in seen:
-                    seen.add(name)
-                    names.append(name)
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return names
-
-
-def gpu_icd(name):
-    if name.startswith("auto"):
-        return "auto"
-    if "NVIDIA" in name:
-        return "nvidia"
-    if any(k in name for k in ("AMD", "ATI", "Radeon")):
-        return "amd"
-    return "auto"
-
-
-def stray_token(game):
-    """pgrep token identifying this game's processes (bracketed by caller)."""
-    if game.get("runner") == "rpgmaker":
-        return "nw --ozone-platform"
-    return os.path.basename(game.get("path", ""))
-
-
-def find_strays(token):
-    """PIDs matching token, self-excluding via bracket pattern. Never raises."""
-    if not token:
-        return []
-    pat = f"[{token[0]}]{token[1:]}"
-    try:
-        out = subprocess.run(["pgrep", "-f", pat], capture_output=True,
-                             text=True, timeout=10).stdout
-    except (OSError, subprocess.SubprocessError):
-        return []
-    me = os.getpid()
-    return [int(p) for p in out.split() if p.isdigit() and int(p) != me]
-
-
-def kill_strays(token):
-    """TERM, grace wait, then KILL leftovers. Returns True if anything was found."""
-    import signal
-    import time
-    pids = find_strays(token)
-    if not pids:
-        return False
-    for pid in pids:
-        try:
-            os.kill(pid, signal.SIGTERM)
-        except OSError:
-            pass
-    time.sleep(2)
-    for pid in pids:
-        try:
-            os.kill(pid, 0)
-        except OSError:
-            continue
-        try:
-            os.kill(pid, signal.SIGKILL)
-        except OSError:
-            pass
-    return True
-
-
-ICON_CACHE = os.path.expanduser("~/.cache/anime4k/icons")
-
-
-def _manifest_icon(game_dir):
-    """icon path from an RPGMaker manifest, game-root-relative resolved."""
-    for mf in (os.path.join(game_dir, "package.json"),
-               os.path.join(game_dir, "www", "package.json")):
-        try:
-            with open(mf) as f:
-                icon = json.load(f).get("window", {}).get("icon") or json.load(open(mf)).get("icon")
-        except (OSError, ValueError):
-            continue
-        if not icon or not isinstance(icon, str):
-            continue
-        for cand in (os.path.join(game_dir, icon),
-                     os.path.join(game_dir, "www", os.path.basename(icon))):
-            if os.path.isfile(cand):
-                return cand
-    return None
-
-
-def _exe_of(game_dir):
-    """First .exe next to the game (Windows bundle shipped alongside)."""
-    try:
-        for fn in sorted(os.listdir(game_dir)):
-            if fn.lower().endswith(".exe"):
-                return os.path.join(game_dir, fn)
-    except OSError:
-        pass
-    return None
-
-
-def resolve_icon(runner, path, gid):
-    """Return a usable image path for the game (cached), or None for fallback.
-
-    Sources, in order: exe-embedded icon (icoextract) for proton titles;
-    manifest art, then sibling exe, for rpgmaker/native titles; plain image
-    files are copied into the cache so unplugged drives keep their icons.
-    """
-    os.makedirs(ICON_CACHE, exist_ok=True)
-    for ext in (".png", ".ico"):
-        hit = os.path.join(ICON_CACHE, gid + ext)
-        if os.path.isfile(hit):
-            return hit
-    src = None
-    if runner == "proton" and path.lower().endswith(".exe"):
-        src = ("exe", path)
-    elif runner in ("rpgmaker", "native"):
-        base = path if os.path.isdir(path) else os.path.dirname(path)
-        for cand in (_manifest_icon(base),
-                    os.path.join(base, "icon.png"),
-                    os.path.join(base, "icon.ico"),
-                    os.path.join(base, "game", "icon.png")):
-            if cand and os.path.isfile(cand):
-                src = ("img", cand)
-                break
-        if src is None:
-            exe = _exe_of(base)
-            if exe:
-                src = ("exe", exe)
-    if src is None:
-        return None
-    kind, spath = src
-    if kind == "img":
-        dst = os.path.join(ICON_CACHE, gid + os.path.splitext(spath)[1].lower())
-        try:
-            import shutil
-            shutil.copyfile(spath, dst)
-            return dst
-        except OSError:
-            return spath
-    # exe-embedded: extract largest icon via icoextract
-    import shutil
-    import subprocess
-    if shutil.which("icoextract") is None:
-        return None
-    dst = os.path.join(ICON_CACHE, gid + ".ico")
-    try:
-        subprocess.run(["icoextract", spath, dst], timeout=30,
-                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       check=True)
-        return dst if os.path.isfile(dst) else None
-    except (OSError, subprocess.SubprocessError):
-        return None
-
-
-def slugify(name):
-    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
-    return slug or "game"
 
 
 class AddWizard(QWizard):
@@ -457,19 +243,11 @@ class AddWizard(QWizard):
         if not path or not os.path.exists(path):
             self.detect_label.setText("Set a valid path first (Browse… or paste).")
             return
-        lib = os.path.join(REPO_ROOT, "scripts", "anime4k-lib.sh")
-        try:
-            out = subprocess.run(
-                ["bash", "-c", f'source "{lib}" && ak_detect_engine "$0"', path],
-                capture_output=True, text=True, timeout=30).stdout.strip()
-        except (OSError, subprocess.SubprocessError):
+        res = system.detect(path)
+        if res is None:
             self.detect_label.setText("Detection failed to run.")
             return
-        parts = out.split("|", 4)
-        if len(parts) != 5:
-            self.detect_label.setText("Detection returned garbage.")
-            return
-        engine, runner, conf, root, detail = parts
+        engine, runner, conf, root, detail = res
         if runner in self.runner_buttons and conf in ("high", "medium"):
             self.runner_buttons[runner].setChecked(True)
             # Runners consume different path kinds: rpgmaker needs the folder.
@@ -564,165 +342,6 @@ def apply_theme(app, name):
         app.setPalette(pal)
     else:
         app.setPalette(app.style().standardPalette())
-
-
-def build_command(game):
-    """Return argv list for a library entry (mirrors the bash runners)."""
-    runner = game["runner"]
-    variant = game.get("variant", "L")
-    fps = game.get("fps", "60")
-    hud = game.get("hud", "0")
-    gpu = game.get("gpu", "auto (discrete GPU preferred)")
-    pmode = game.get("prefix_mode", "shared")
-    lang = game.get("lang", "")
-    path = game["path"]
-    if runner == "proton":
-        argv = [os.path.join(SCRIPTS_DIR, "proton-anime4k.sh"),
-                "--variant", variant, "--fps", fps,
-                "--prefix-mode", pmode if pmode in ("shared", "game") else "shared"]
-        if hud == "1":
-            argv.append("--hud")
-        if lang:
-            argv += ["--lang", lang]
-        if not gpu.startswith("auto"):
-            argv += ["--dxvk-device", gpu]
-        argv.append(path)
-    elif runner == "rpgmaker":
-        argv = [os.path.join(SCRIPTS_DIR, "rpgmaker-anime4k.sh"),
-                "--variant", variant, "--gpu", gpu_icd(gpu),
-                "--fps", fps]
-        if hud == "1":
-            argv.append("--hud")
-        argv += ["--gamepath", path]
-    else:
-        argv = [os.path.join(SCRIPTS_DIR, "native-anime4k.sh"),
-                "--variant", variant, "--gpu", gpu_icd(gpu),
-                "--fps", fps]
-        if hud == "1":
-            argv.append("--hud")
-        if lang:
-            argv += ["--lang", lang]
-        argv.append(path)
-    return argv
-
-
-def build_translate_command(game, gid, setup=False):
-    """Argv for a translation session (filter + DeepL in one launch).
-    setup=True shows the Textractor window for first-time thread picking;
-    the recorded hook auto-inserts either way (seeded SavedHooks)."""
-    argv = [os.path.join(TRANSLATE_DIR, "vn-launch.sh"),
-            "--exe", game["path"], "--gameid", gid,
-            "--filter", game.get("variant", "L")]
-    if game.get("lang"):
-        argv += ["--lang", game["lang"]]
-    hook = (game.get("translate") or {}).get("hook_code", "").strip()
-    if hook:
-        argv += ["--hook-code", hook]
-    if setup:
-        argv += ["--setup"]
-    return argv
-
-
-def translate_bridge_ok():
-    """True when something answers :6677 with a real ws handshake.
-    Never probe with bare TCP: the stock bridge panics on non-handshakes."""
-    try:
-        import websocket
-        ws = websocket.create_connection("ws://127.0.0.1:6677", timeout=3)
-        ws.close()
-        return True
-    except Exception:
-        return False
-
-
-TEXTBOX_PROG = "textbox.py"
-
-
-def _textbox_pattern():
-    return r"[t]extbox\.py --start-workers"
-
-
-def textbox_pids():
-    """PIDs of a running textbox backend (workers = owns the translator)."""
-    try:
-        out = subprocess.run(["pgrep", "-f", _textbox_pattern()],
-                             capture_output=True, text=True, timeout=10).stdout
-    except (OSError, subprocess.SubprocessError):
-        return []
-    return [p for p in (x.strip() for x in out.splitlines()) if p]
-
-
-def _translate_cdp_profile():
-    """(full path, basename) of the isolated translator-browser profile.
-    Never the real browser profile — automation always gets its own dir."""
-    try:
-        with open(os.path.join(TRANSLATE_DIR, "config.json"), encoding="utf-8") as f:
-            prof = (json.load(f) or {}).get("brave_profile", "")
-    except (OSError, ValueError):
-        prof = ""
-    prof = os.path.expanduser(os.path.expandvars(
-        prof or "~/.cache/vn-translate/brave-cdp-profile"))
-    base = os.path.basename(prof.rstrip("/")) or "brave-cdp-profile"
-    return prof, base
-
-
-def _textbox_brave_pattern():
-    """pkill -f pattern matching ONLY translator browsers: the isolated
-    profile marker in the cmdline, whatever the binary (brave/chromium/
-    chrome/edge/...). A normal browser never carries this path."""
-    _, base = _translate_cdp_profile()
-    esc = "".join(("\\" + ch) if ch in ".+*?()[]{}^$|\\" else ch for ch in base)
-    if esc and esc[0].isalnum():
-        return f"user-data-dir=[^ ]*[{esc[0]}]{esc[1:]}"
-    return f"user-data-dir=[^ ]*{esc}"
-
-
-def _kill_textbox_group(proc, sig):
-    """Signal the textbox process group (backend + translator browser it
-    spawned). Returns True if a live group was signaled."""
-    try:
-        if proc is None or proc.poll() is not None:
-            return False
-        os.killpg(os.getpgid(proc.pid), sig)
-        return True
-    except (OSError, ProcessLookupError):
-        return False
-
-
-def translate_wedge_pids(game_base=""):
-    """PIDs of wedged translate containers: umu-run ... hook .vbs older than
-    ~3 min while no game/hooker process lives and the bridge is down.
-    That's the wineserver -w stall signature (container alive, exes dead)."""
-    import time
-    try:
-        out = subprocess.run(["ps", "-eo", "pid,etimes,args"], capture_output=True,
-                             text=True, timeout=10).stdout.splitlines()
-    except (OSError, subprocess.SubprocessError):
-        return []
-    game_alive = False
-    old_launchers = []
-    gb = os.path.basename(game_base or "").lower()
-    for line in out:
-        parts = line.split(None, 2)
-        if len(parts) != 3:
-            continue
-        pid, etime, args = parts
-        if not pid.isdigit():
-            continue
-        if ("umu-run" in args and "hook" in args and ".vbs" in args
-                and "ps -eo" not in args):
-            try:
-                if int(etime) > 180:
-                    old_launchers.append(int(pid))
-            except ValueError:
-                pass
-        low = args.lower()
-        if (("textractor.exe" in low or (gb and gb in low))
-                and "umu-run" not in low and "ps -eo" not in args):
-            game_alive = True
-    if old_launchers and not game_alive and not translate_bridge_ok():
-        return old_launchers
-    return []
 
 
 class MainWindow(QMainWindow):
@@ -881,22 +500,12 @@ class MainWindow(QMainWindow):
         if wiz.exec() != QDialog.Accepted:
             return
         data = wiz.result_data()
-        if not data["path"] or not os.path.exists(data["path"]):
-            QMessageBox.warning(self, "Add game", "That path does not exist.")
-            return
-        if data["runner"] == "rpgmaker" and not os.path.isdir(data["path"]):
-            QMessageBox.warning(self, "Add game",
-                                "The rpgmaker runner needs the game folder, not a file.\n"
-                                "Use Detect (or pick the folder containing www/).")
+        reason = library.validate_entry(data)
+        if reason:
+            QMessageBox.warning(self, "Add game", reason)
             return
         games = load_games()
-        gid = slugify(data["name"])
-        base, n = gid, 2
-        while gid in games:
-            gid = f"{base}-{n}"
-            n += 1
-        games[gid] = data
-        save_games(games)
+        store.new_game(games, data)
         self.refresh_list()
 
     def edit_game(self):
@@ -911,16 +520,12 @@ class MainWindow(QMainWindow):
         if wiz.exec() != QDialog.Accepted:
             return
         data = wiz.result_data()
-        if not data["path"] or not os.path.exists(data["path"]):
-            QMessageBox.warning(self, "Edit game", "That path does not exist.")
+        data = library.normalize_edit(data, game)
+        reason = library.validate_entry(data)
+        if reason:
+            QMessageBox.warning(self, "Edit game", reason)
             return
-        data["runner"] = game.get("runner", data["runner"])
-        if data["runner"] == "rpgmaker" and not os.path.isdir(data["path"]):
-            QMessageBox.warning(self, "Edit game",
-                                "The rpgmaker runner needs the game folder, not a file.")
-            return
-        games[gid] = data
-        save_games(games)
+        store.update_game(games, gid, data)
         self.refresh_list()
         for i in range(self.game_list.count()):
             if self.game_list.item(i).data(Qt.UserRole) == gid:
@@ -935,9 +540,7 @@ class MainWindow(QMainWindow):
         if QMessageBox.question(self, "Remove game",
                                 f"Remove '{g.get('name', gid)}' from the library?") != QMessageBox.Yes:
             return
-        games = load_games()
-        games.pop(gid, None)
-        save_games(games)
+        store.remove_game(gid)
         self.refresh_list()
 
     def launch_selected(self, unfiltered):
@@ -1063,12 +666,7 @@ class MainWindow(QMainWindow):
             self.log_view.append("stopping live session for relaunch…")
             self.status_label.setText("Stopping live session…")
             QApplication.processEvents()
-            try:
-                subprocess.run([os.path.join(TRANSLATE_DIR, "vn-launch.sh"),
-                                "--stop-exe", game["path"]], timeout=90,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except (OSError, subprocess.SubprocessError):
-                pass
+            process.stop_session(game["path"])
             self.log_view.append("stopped.")
         wedge = translate_wedge_pids(game.get("path", ""))
         if wedge:
@@ -1086,12 +684,7 @@ class MainWindow(QMainWindow):
             self.log_view.append("clearing wedged session…")
             self.status_label.setText("Clearing wedged session…")
             QApplication.processEvents()
-            try:
-                subprocess.run([os.path.join(TRANSLATE_DIR, "vn-launch.sh"),
-                                "--stop-exe", game["path"]], timeout=90,
-                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            except (OSError, subprocess.SubprocessError):
-                pass
+            process.stop_session(game["path"])
             self.log_view.append("cleared.")
         token = stray_token(game)
         if find_strays(token):
@@ -1235,41 +828,11 @@ class MainWindow(QMainWindow):
                                 f"Open the Textbox to read from it.")
 
     def open_textbox(self):
-        import subprocess as _sp
-        argv = [os.path.join(TRANSLATE_DIR, TEXTBOX_PROG), "--start-workers"]
-        try:
-            game = load_games().get(self.selected_id() or "")
-            thread = ((game or {}).get("translate") or {}).get("thread", "").strip()
-            if thread:
-                argv += ["--thread", thread]
-        except Exception:
-            pass
-        # Single instance: two backends = two translators fighting over one
-        # DeepL page (and doubled bridge clients). Focus nothing — just refuse.
-        try:
-            if textbox_pids():
-                self.log_view.append("textbox: already running (one instance only).")
-                return
-        except Exception:
-            pass
-        # Keep stderr: fatal tracebacks used to vanish into DEVNULL, which is
-        # how rendering bugs shipped invisible (see translate.md self-test).
-        try:
-            logdir = os.path.expanduser("~/.cache/anime4k")
-            os.makedirs(logdir, exist_ok=True)
-            logf = open(os.path.join(logdir, "textbox.log"), "ab", buffering=0)
-        except OSError:
-            logf = _sp.DEVNULL
-        try:
-            self.textbox_proc = _sp.Popen(argv, stdout=logf, stderr=logf,
-                                          stdin=_sp.DEVNULL, start_new_session=True)
-            self.log_view.append("textbox: started (stderr -> ~/.cache/anime4k/textbox.log)")
-        except (OSError, _sp.SubprocessError) as e:
-            # Log the real reason (e.g. missing exec bit): the generic
-            # warning alone once hid a Permission denied.
-            self.textbox_proc = None
-            self.log_view.append(f"textbox: could not open ({e})")
-            QMessageBox.warning(self, "Textbox", f"Could not open the translation window:\n{e}")
+        proc, msg = process.spawn_textbox(self.selected_id())
+        self.textbox_proc = proc
+        self.log_view.append(msg)
+        if proc is None and "could not open" in msg:
+            QMessageBox.warning(self, "Textbox", msg)
 
     def poll_translate_status(self):
         try:
@@ -1318,15 +881,8 @@ class MainWindow(QMainWindow):
                 _kill_textbox_group(self.textbox_proc, _sig.SIGKILL)
                 self.log_view.append("translation readout stopped.")
             self.textbox_proc = None
-        # Orphaned translator browsers (backend died without cleanup): only
-        # the isolated CDP profile ever matches — real browsers are safe.
-        try:
-            r = subprocess.run(["pkill", "-f", _textbox_brave_pattern()],
-                               capture_output=True, timeout=10)
-            if r.returncode == 0:
-                self.log_view.append("translator browser stopped.")
-        except (OSError, subprocess.SubprocessError):
-            pass
+        if process.kill_orphan_browsers():
+            self.log_view.append("translator browser stopped.")
 
     def _read_log(self):
         if self.proc is not None:

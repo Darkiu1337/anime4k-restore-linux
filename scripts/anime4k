@@ -40,16 +40,6 @@ gpu_list() {
   vulkaninfo --summary 2>/dev/null | grep -i "deviceName" | sed 's/.*deviceName.*= //' | sort -u
 }
 
-# Map a device name to the radeon/nvidia ICD keyword (auto stays auto).
-gpu_icd() {
-  case "$1" in
-    auto*) echo auto ;;
-    *NVIDIA*) echo nvidia ;;
-    *AMD*|*ATI*|*Radeon*) echo amd ;;
-    *) echo auto ;;
-  esac
-}
-
 cmd_add() {
   local runner name path variant gpu fps hud id
   runner="$(gum choose --header "Runner (limits shown)" \
@@ -169,45 +159,7 @@ cmd_launch() {
   local id="${1:-}"
   [ -n "$id" ] || id="$(pick_game)"
   jq -e ".games[\"$id\"]" "$LIB" >/dev/null || { echo "error: unknown game id '$id'" >&2; exit 1; }
-  local runner path variant gpu fps hud pmode lang
-  runner="$(lib_get runner "$id")"; path="$(lib_get path "$id")"
-  variant="$(lib_get variant "$id")"; gpu="$(lib_get gpu "$id")"
-  fps="$(lib_get fps "$id")"; hud="$(lib_get hud "$id")"
-  pmode="$(lib_get prefix_mode "$id")"; pmode="${pmode:-shared}"
-  lang="$(lib_get lang "$id")"
-  [ -e "$path" ] || { echo "error: path no longer exists: $path" >&2; exit 1; }
-  local hudflag=() langflag=()
-  [ "$hud" = "1" ] && hudflag=(--hud)
-  [ -n "$lang" ] && langflag=(--lang "$lang")
-  local tr_enabled
-  tr_enabled="$(jq -r --arg id "$id" '.games[$id].translate.enabled // "0"' "$LIB" 2>/dev/null)"
-  if [ "$runner" = "proton" ] && [ "$tr_enabled" = "1" ]; then
-    # Filter + DeepL translation in one launch (translate/vn-launch.sh).
-    # No recorded hook yet -> setup mode (Textractor visible) so the story
-    # thread can be picked; the recorded hook auto-inserts either way.
-    tr_hook="$(jq -r --arg id "$id" '.games[$id].translate.hook_code // empty' "$LIB" 2>/dev/null)"
-    tr_setup=()
-    if [ -z "$tr_hook" ]; then
-      echo "no hook recorded for '$id': launching SETUP (pick the story thread in Textractor)"
-      tr_setup=(--setup)
-    fi
-    exec "$SCRIPT_DIR/../translate/vn-launch.sh" --exe "$path" --gameid "$id" \
-      "${langflag[@]}" ${tr_hook:+--hook-code "$tr_hook"} "${tr_setup[@]}" --filter "$variant"
-  fi
-  case "$runner" in
-    proton)
-      local dev=()
-      case "$gpu" in auto*) : ;; *) dev=(--dxvk-device "$gpu") ;; esac
-      exec "$SCRIPT_DIR/proton-anime4k.sh" --variant "$variant" --fps "$fps" --prefix-mode "$pmode" "${hudflag[@]}" "${langflag[@]}" "${dev[@]}" "$path"
-      ;;
-    rpgmaker)
-      exec "$SCRIPT_DIR/rpgmaker-anime4k.sh" --variant "$variant" --gpu "$(gpu_icd "$gpu")" --fps "$fps" "${hudflag[@]}" --gamepath "$path"
-      ;;
-    native)
-      exec "$SCRIPT_DIR/native-anime4k.sh" --variant "$variant" --gpu "$(gpu_icd "$gpu")" --fps "$fps" "${hudflag[@]}" "${langflag[@]}" "$path"
-      ;;
-    *) echo "error: unknown runner '$runner'" >&2; exit 1 ;;
-  esac
+  exec env PYTHONPATH="$(dirname "$SCRIPT_DIR")" python3 -m core launch "$id"
 }
 
 cmd_remove() {
