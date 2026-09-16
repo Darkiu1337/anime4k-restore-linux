@@ -64,6 +64,12 @@ stock-bridge installs simply keep following the selection). Manual control:
 
 ## Crash doctrine (proven across sessions, do not rediscover)
 
+* **Keep the extension set stripped: bridge only.** Proven live: with the
+  full stock set (Google Translate ext ON, target Tajik) the hook fired in
+  Textractor yet the bridge stayed totally silent for minutes; unchecking
+  everything but `textractor_websocket` restored tagged traffic instantly.
+  A loaded translate ext can stall the whole sentence pipeline, so translate
+  in the textbox, never in Textractor.
 * **Remove, don't deselect.** Unselected hooks stay inserted and keep
   processing. Four crashes with the GDI bulk inserted, zero Anim3-only —
   but bulk is *not* universally fatal (one title stable with everything),
@@ -107,14 +113,23 @@ stock-bridge installs simply keep following the selection). Manual control:
 * **Click** = click-through. Clicks on the text area fall through to the game
   below; hovering either bar (titlebar or toolbar) restores full input so
   Top/Click stay clickable and the window stays draggable. (Technical note:
-  this uses `Qt.WindowTransparentForInput`, which works on Wayland with Qt 6
-  — verified at the protocol level as an empty surface input region — plus a
-  bars-only input mask as the hover guard. `QWindow.setMask()` alone cannot
-  do it: Qt normalizes empty masks to null, which means full input.)
-* **Top** = keep on top. Qt's stay-on-top hint is ignored by Hyprland, so the
-  button also floats + pins the window via `hyprctl` (best-effort: skipped
-  silently off Hyprland). The pin is re-asserted after the surface
-  recreations that flag toggles cause, so Top survives Click toggles.
+  click-through is a bars-only surface input mask; `Qt.WindowTransparentForInput`
+  is deliberately never set — while it is set, Qt silently drops every mask
+  update. Both facts verified at the Wayland protocol level.)
+* **Top** = pinned to the box's workspace, above everything there. Qt's
+  stay-on-top hint is ignored by Hyprland, so a ~1s poller enforces it: pinned
+  while Top is on *and* you're on the box's workspace, unpinned everywhere
+  else (stays put, normal stacking, freely movable — including Top-off
+  state). Leaving drags it along once (pin mechanics), then it unpins and
+  simply stays where it landed — it is deliberately never moved back, because
+  moving a window makes the compositor flip the active workspace to follow
+  it, which fights you in a loop. Coming back repins it into view. Moving it by hand adopts the new workspace as home
+  (follow-residue can never fake a move: adoption needs a workspace edge
+  while unpinned; re-arm any time with a Top toggle). Every new translated
+  line also raises it (no focus steal). An old session rule once pinned this
+  title everywhere; the poller + map-time unpin neutralize it. Corner
+  rounding follows the compositor (`decoration:rounding`, Style override
+  available).
 * For a permanent setup (no per-launch Top press), add to your Hyprland
   config (lua syntax, Hyprland ≥ 0.55):
   ```lua
@@ -122,10 +137,24 @@ stock-bridge installs simply keep following the selection). Manual control:
     name = "vn-translate-overlay",
     match = { title = "^vn-translate$" },
     float = true,
-    pin = true,
   })
   ```
+  (The app manages pin itself; add `pin = true` as well only if you want the
+  box on *every* workspace regardless of Top.)
   Verified on Hyprland 0.56 + Qt 6.11.
+
+## Textbox style
+
+`translate/textbox.py` is a Qt Quick readout: same pipeline and window
+behavior as always, but text styling binds live — font size/family/color
+changes restyle the whole history, including existing lines. The **Style**
+toolbar button opens a drawer with font, size, EN/JA colors, a soft text
+**shadow** (GPU halo that keeps text selectable), background **opacity**,
+top/bottom-bar **autohide** (bars reveal when the cursor enters their edge
+strips), and corner rounding (follows the compositor's
+`decoration:rounding`, override in the drawer). All prefs persist in the
+textbox settings store. One backend ever runs (single-instance guard):
+closing the window quits it, so it can never resurrect on new text.
 
 ## Per-game notes
 

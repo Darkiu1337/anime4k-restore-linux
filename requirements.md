@@ -41,6 +41,12 @@ Prefer the system package so the app follows desktop/Qt theming (qt6ct etc.):
 | Arch | `sudo pacman -S pyside6` [verified] |
 | Others | `pip install PySide6` (bundled Qt; in-app theme selector covers styling) |
 
+The translation textbox is Qt Quick (QML): it needs the `QtQuick`,
+`QtQuick.Controls`, `QtQuick.Dialogs` (font/color pickers) and
+`QtQuick.Effects` (text shadow) modules. On Arch these ship in
+`qt6-declarative` [verified: 6.11.2] (pulled in with the desktop Qt stack;
+`pip install PySide6` bundles them).
+
 ## VN translation (translate/)
 
 Fetched at install time (pinned + checksum-verified, never committed):
