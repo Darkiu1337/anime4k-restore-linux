@@ -302,11 +302,13 @@ class Backend(QObject):
                     self._home_ws = ws
             self._last_ws = ws
             self._last_pinned = bool(me.get("pinned", False))
+            # Floating is a hard requirement (overlay), Top or not; re-apply
+            # if something tiled it (e.g. a manual toggle).
+            if not me.get("floating", False):
+                self._hyprctl_float()
+                return
             want = self._want_pinned(active.get("id"), self._home_ws,
                                      self._keepontop)
-            # Never fight an un-floatable window with a dispatch per second.
-            if want and not me.get("floating", False):
-                return
             if bool(me.get("pinned", False)) != want:
                 action = "enable" if want else "disable"
                 subprocess.run(["hyprctl", "dispatch",
@@ -331,9 +333,9 @@ class Backend(QObject):
             pass
         self.restore_state()
         self.apply_flags(initial=True)
-        # Every launch, either state: enable-path floats+raises (Top on),
-        # disable-path unpins (Top off AND neutralizes the stale session rule
-        # that pins this title at map time).
+        # Always float (a tiled overlay is useless); Top additionally
+        # pins/raises. Top-off unpins (also neutralizes a stale session rule).
+        self._hyprctl_float_deferred()
         self._hyprctl_sync_top_deferred()
         self.drain_timer = QTimer(self)
         self.drain_timer.timeout.connect(self.drain)
@@ -526,38 +528,35 @@ class Backend(QObject):
             self._hyprctl_unpin()
             QTimer.singleShot(500, self._hyprctl_unpin)
 
-    def _hyprctl_unpin(self):
-        if not shutil.which("hyprctl"):
-            return
-        if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+    def _hyprctl_ready(self):
+        return (shutil.which("hyprctl")
+                and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"))
+
+    def _dispatch(self, cmd):
+        if not self._hyprctl_ready():
             return
         try:
-            subprocess.run(["hyprctl", "dispatch",
-                            'hl.dsp.window.pin({window="title:^vn-translate$", action="disable"})'],
+            subprocess.run(["hyprctl", "dispatch", cmd],
                            capture_output=True, timeout=5)
         except Exception:
             pass
 
+    def _hyprctl_float(self):
+        self._dispatch('hl.dsp.window.float({window="title:^vn-translate$", action="enable"})')
+
+    def _hyprctl_float_deferred(self):
+        self._hyprctl_float()
+        QTimer.singleShot(500, self._hyprctl_float)
+        QTimer.singleShot(1500, self._hyprctl_float)
+
+    def _hyprctl_unpin(self):
+        self._dispatch('hl.dsp.window.pin({window="title:^vn-translate$", action="disable"})')
+
     def _hyprctl_sync_top(self):
         # Float + raise + unpin (see docs/translate.md).
-        if not shutil.which("hyprctl"):
-            return
-        if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
-            return
-        sel = 'window="title:^vn-translate$"'
-        cmds = [
-            ["hyprctl", "dispatch",
-             'hl.dsp.window.float({window="title:^vn-translate$", action="enable"})'],
-            ["hyprctl", "dispatch",
-             f'hl.dsp.window.pin({{{sel}, action="disable"}})'],
-            ["hyprctl", "dispatch",
-             f'hl.dsp.window.bring_to_top({{{sel}}})'],
-        ]
-        for cmd in cmds:
-            try:
-                subprocess.run(cmd, capture_output=True, timeout=5)
-            except Exception:
-                pass
+        self._hyprctl_float()
+        self._hyprctl_unpin()
+        self._dispatch('hl.dsp.window.bring_to_top({window="title:^vn-translate$"})')
 
     def _hyprctl_raise(self):
         if not self._keepontop:

@@ -119,6 +119,10 @@ stock-bridge installs simply keep following the selection). Manual control:
   click-through is a bars-only surface input mask; `Qt.WindowTransparentForInput`
   is deliberately never set — while it is set, Qt silently drops every mask
   update. Both facts verified at the Wayland protocol level.)
+* **Float** is enforced unconditionally (an overlay must never tile): a
+  Hyprland poller float-enables the window at map and re-floats it if
+  something tiles it, independent of Top. No config change needed — works on
+  any Hyprland ≥ 0.55 the app is run from.
 * **Top** = pinned to the box's workspace, above everything there. Qt's
   stay-on-top hint is ignored by Hyprland, so a ~1s poller enforces it: pinned
   while Top is on *and* you're on the box's workspace, unpinned everywhere
@@ -133,8 +137,8 @@ stock-bridge installs simply keep following the selection). Manual control:
   title everywhere; the poller + map-time unpin neutralize it. Corner
   rounding follows the compositor (`decoration:rounding`, Style override
   available).
-* For a permanent setup (no per-launch Top press), add to your Hyprland
-  config (lua syntax, Hyprland ≥ 0.55):
+* Optional Hyprland rule to float it at map time (avoids the brief tiled
+  moment before the app's poller floats it; lua syntax, Hyprland ≥ 0.55):
   ```lua
   hl.window_rule({
     name = "vn-translate-overlay",
@@ -142,9 +146,9 @@ stock-bridge installs simply keep following the selection). Manual control:
     float = true,
   })
   ```
-  (The app manages pin itself; add `pin = true` as well only if you want the
+  (The app manages float + pin itself; add `pin = true` only if you want the
   box on *every* workspace regardless of Top.)
-  Verified on Hyprland 0.56 + Qt 6.11.
+  Verified on Hyprland 0.56.2 + Qt 6.11.
 
 ## Textbox style
 
