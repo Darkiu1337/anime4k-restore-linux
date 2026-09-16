@@ -6,8 +6,8 @@ Dialog {
     id: root
     title: "Pick thread"
     modal: true
-    width: 560
-    height: 460
+    width: Math.min(560, root.parent ? root.parent.width - 48 : 560)
+    height: Math.min(460, root.parent ? root.parent.height - 48 : 460)
     padding: 16
     anchors.centerIn: parent
     standardButtons: Dialog.Ok | Dialog.Cancel

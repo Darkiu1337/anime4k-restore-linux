@@ -6,7 +6,7 @@ Dialog {
     id: root
     title: "Settings"
     modal: true
-    width: 560
+    width: Math.min(560, root.parent ? root.parent.width - 48 : 560)
     padding: 16
     anchors.centerIn: parent
     standardButtons: Dialog.Save | Dialog.Cancel

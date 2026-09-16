@@ -6,8 +6,8 @@ import QtQuick.Layouts
 Dialog {
     id: root
     modal: true
-    width: 680
-    height: 540
+    width: Math.min(680, root.parent ? root.parent.width - 48 : 680)
+    height: Math.min(540, root.parent ? root.parent.height - 48 : 540)
     padding: 16
     anchors.centerIn: parent
     standardButtons: Dialog.NoButton
@@ -160,6 +160,7 @@ Dialog {
             id: pages
             Layout.fillWidth: true
             Layout.fillHeight: true
+            clip: true
             currentIndex: 0
 
             Item {

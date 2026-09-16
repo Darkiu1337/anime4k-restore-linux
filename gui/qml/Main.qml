@@ -123,7 +123,7 @@ ApplicationWindow {
                     fillMode: Image.PreserveAspectFit
                     visible: status === Image.Ready
                 }
-                Text {
+                Label {
                     id: detailText
                     text: "Select a game."
                     wrapMode: Text.Wrap
@@ -220,7 +220,7 @@ ApplicationWindow {
         id: previewDlg
         title: "Resolved command"
         modal: true
-        width: 640
+        width: Math.min(640, previewDlg.parent ? previewDlg.parent.width - 48 : 640)
         padding: 16
         anchors.centerIn: parent
         standardButtons: Dialog.Ok
