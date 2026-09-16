@@ -40,3 +40,14 @@ Prefer the system package so the app follows desktop/Qt theming (qt6ct etc.):
 |---|---|
 | Arch | `sudo pacman -S pyside6` [verified] |
 | Others | `pip install PySide6` (bundled Qt; in-app theme selector covers styling) |
+
+## VN translation (translate/)
+
+Fetched at install time (pinned + checksum-verified, never committed):
+
+| Need | Arch (verified) | Debian/Ubuntu | Fedora | Notes |
+|---|---|---|---|---|
+| python-websocket-client | `python-websocket-client` [verified] | `python3-websocket` | `python3-websocket-client` | hook bridge client; installer handles it |
+| Textractor + bridge | fetched by `translate/fetch-vendor.sh` | same | same | Chenx221 build + kuroahna bridge (or hardened fork asset) |
+| Brave/Chromium | existing browser | same | same | DeepL CDP automation target; isolated debug profile |
+| DLX server (opt-in) | fetched by installer | same | same | local DeepL fallback on :1188 |

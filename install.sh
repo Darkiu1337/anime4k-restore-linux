@@ -219,8 +219,19 @@ while IFS=: read -r tool pkgs; do
     install_pkg "$tool" "$arch_p" "$deb_p" "$fed_p" || true
   fi
 done <<EOF
-$DEPS
+ $DEPS
 EOF
+
+# python-websocket-client (translation bridge client): no CLI to probe, check import.
+if python3 -c "import websocket" 2>/dev/null; then
+  echo "ok: python-websocket-client"
+else
+  echo "missing: python-websocket-client (translation bridge client)"
+  missing=1
+  if [ "$CHECK_ONLY" = "0" ]; then
+    install_pkg "python-websocket-client" "python-websocket-client" "python3-websocket" "python3-websocket-client" || true
+  fi
+fi
 
 # umu-launcher (Proton runner backend): official multilib package on Arch.
 # The lib32-vulkan-driver provider menu (13 choices) would stall a fresh
@@ -482,6 +493,42 @@ if [ ! -f "$HOME/.config/anime4k/config.json" ]; then
   echo "seeded ~/.config/anime4k/config.json (edit your defaults there)"
 fi
 
+# VN translation (translate/): fetch pinned vendor binaries (never committed,
+# all checksum-verified) and install the Textractor hook into the shared prefix.
+if [ -d "$ROOT/translate" ]; then
+  # Seed per-file settings from samples (first run only; never overwrite).
+  # Without these, vn-textbox/vn_translate fall back to builtins and
+  # vn-launch --game/--list refuses with a hint — seeded files make all
+  # entry points work out of the box.
+  if [ ! -f "$ROOT/translate/config.json" ] && [ -f "$ROOT/translate/config.json.sample" ]; then
+    cp "$ROOT/translate/config.json.sample" "$ROOT/translate/config.json"
+    echo "seeded translate/config.json (translator settings; edit to override)"
+  fi
+  if [ ! -f "$ROOT/translate/translate.json" ] && [ -f "$ROOT/translate/translate.json.sample" ]; then
+    cp "$ROOT/translate/translate.json.sample" "$ROOT/translate/translate.json"
+    echo "seeded translate/translate.json (games registry; edit exe paths)"
+  fi
+  TRANSLATE_BRIDGE="${TRANSLATE_BRIDGE:-fixed}"
+  if confirm "install VN translation support (Textractor hook + DeepL bridge)?"; then
+    if "$ROOT/translate/fetch-vendor.sh" --bridge "$TRANSLATE_BRIDGE"; then
+      "$ROOT/translate/install-textractor.sh" --bridge "$TRANSLATE_BRIDGE" \
+        || echo "  textractor install failed (see above); re-run install.sh to retry"
+    else
+      echo "  vendor fetch failed (see above); re-run install.sh to retry"
+    fi
+  else
+    echo "  skipped translation support (re-run install.sh to add later)"
+  fi
+  if confirm_no "install local DLX server binary (offline DeepL fallback on :1188)?"; then
+    if "$ROOT/translate/fetch-vendor.sh" --dlx; then
+      mkdir -p "$HOME/.local/bin"
+      cp -f "$ROOT/translate/vendor/deeplx_linux_amd64" "$HOME/.local/bin/dlx"
+      chmod +x "$HOME/.local/bin/dlx"
+      echo "installed dlx to ~/.local/bin/dlx (run 'dlx' to serve :1188)"
+    fi
+  fi
+fi
+
 # PATH symlinks (default on): anime4k TUI + GUI entry point.
 if [ "$SYMLINK" = "1" ]; then
   mkdir -p "$HOME/.local/bin"
@@ -491,6 +538,11 @@ if [ "$SYMLINK" = "1" ]; then
     echo "symlinked: anime4k, anime4k-gui -> ~/.local/bin/"
   else
     echo "symlinked: anime4k -> ~/.local/bin/ (gui not built yet, skipping anime4k-gui)"
+  fi
+  if [ -d "$ROOT/translate" ]; then
+    ln -sf "$ROOT/translate/vn-launch.sh" "$HOME/.local/bin/vn-launch"
+    ln -sf "$ROOT/translate/textbox.py" "$HOME/.local/bin/vn-textbox"
+    echo "symlinked: vn-launch, vn-textbox -> ~/.local/bin/ (translation)"
   fi
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) ;;

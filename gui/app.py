@@ -26,6 +26,7 @@ APP_DIR = os.path.dirname(os.path.realpath(__file__))
 REPO_ROOT = os.path.dirname(APP_DIR)
 SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
 SHADERS_DIR = os.path.join(REPO_ROOT, "shaders")
+TRANSLATE_DIR = os.path.join(REPO_ROOT, "translate")
 CONFIG_DIR = os.path.expanduser("~/.config/anime4k")
 GAMES_JSON = os.path.join(CONFIG_DIR, "games.json")
 CONFIG_JSON = os.path.join(CONFIG_DIR, "config.json")
@@ -288,6 +289,7 @@ class AddWizard(QWizard):
     def __init__(self, parent=None, initial=None, lock_runner=False):
         super().__init__(parent)
         initial = initial or {}
+        self._initial_translate = dict(initial.get("translate", {}))
         self.setWindowTitle("Edit game" if lock_runner else "Add game")
         self.setOption(QWizard.NoBackButtonOnStartPage, True)
 
@@ -386,6 +388,24 @@ class AddWizard(QWizard):
         p4.setLayout(lay4)
         self.addPage(p4)
 
+        p5 = QWizardPage()
+        p5.setTitle("Translation (Japanese VNs)")
+        lay5 = QFormLayout()
+        tr_init = initial.get("translate", {})
+        self.tr_enable = QCheckBox("Translate Japanese dialogue via DeepL")
+        self.tr_enable.setChecked(tr_init.get("enabled") == "1")
+        lay5.addRow("", self.tr_enable)
+        self.tr_hook = QLineEdit(tr_init.get("hook_code", ""))
+        self.tr_hook.setPlaceholderText("hook code, e.g. HSX10@54DC0:game.exe (optional)")
+        lay5.addRow("Hook code:", self.tr_hook)
+        note = QLabel("Proton/Windows games only. Filter and translation compose in one "
+                      "launch. First run: enable, launch with Translate, pick the story thread "
+                      "in Textractor (Setup shows its window), paste its code here.")
+        note.setWordWrap(True)
+        lay5.addRow("", note)
+        p5.setLayout(lay5)
+        self.addPage(p5)
+
     def _browse(self):
         from PySide6.QtCore import QDir, QUrl
         runner = self.runner()
@@ -471,6 +491,7 @@ class AddWizard(QWizard):
         lang = self.lang_combo.currentText().strip()
         if lang == "System default":
             lang = ""
+        tr_prev = (self._initial_translate if hasattr(self, "_initial_translate") else {})
         return {
             "name": name,
             "runner": self.runner(),
@@ -481,6 +502,13 @@ class AddWizard(QWizard):
             "hud": "1" if self.hud_check.isChecked() else "0",
             "lang": lang,
             "prefix_mode": "game" if self.prefix_check.isChecked() else "shared",
+            "translate": {
+                "enabled": "1" if (self.tr_enable.isChecked()
+                                   and self.runner() == "proton") else "0",
+                "hook_code": self.tr_hook.text().strip(),
+                "hook_mode": tr_prev.get("hook_mode", "unknown"),
+                "thread": tr_prev.get("thread", ""),
+            },
         }
 
 
@@ -578,6 +606,71 @@ def build_command(game):
     return argv
 
 
+def build_translate_command(game, gid, setup=False):
+    """Argv for a translation session (filter + DeepL in one launch).
+    setup=True shows the Textractor window for first-time thread picking;
+    the recorded hook auto-inserts either way (seeded SavedHooks)."""
+    argv = [os.path.join(TRANSLATE_DIR, "vn-launch.sh"),
+            "--exe", game["path"], "--gameid", gid,
+            "--filter", game.get("variant", "L")]
+    if game.get("lang"):
+        argv += ["--lang", game["lang"]]
+    hook = (game.get("translate") or {}).get("hook_code", "").strip()
+    if hook:
+        argv += ["--hook-code", hook]
+    if setup:
+        argv += ["--setup"]
+    return argv
+
+
+def translate_bridge_ok():
+    """True when something answers :6677 with a real ws handshake.
+    Never probe with bare TCP: the stock bridge panics on non-handshakes."""
+    try:
+        import websocket
+        ws = websocket.create_connection("ws://127.0.0.1:6677", timeout=3)
+        ws.close()
+        return True
+    except Exception:
+        return False
+
+
+def translate_wedge_pids(game_base=""):
+    """PIDs of wedged translate containers: umu-run ... hook .vbs older than
+    ~3 min while no game/hooker process lives and the bridge is down.
+    That's the wineserver -w stall signature (container alive, exes dead)."""
+    import time
+    try:
+        out = subprocess.run(["ps", "-eo", "pid,etimes,args"], capture_output=True,
+                             text=True, timeout=10).stdout.splitlines()
+    except (OSError, subprocess.SubprocessError):
+        return []
+    game_alive = False
+    old_launchers = []
+    gb = os.path.basename(game_base or "").lower()
+    for line in out:
+        parts = line.split(None, 2)
+        if len(parts) != 3:
+            continue
+        pid, etime, args = parts
+        if not pid.isdigit():
+            continue
+        if ("umu-run" in args and "hook" in args and ".vbs" in args
+                and "ps -eo" not in args):
+            try:
+                if int(etime) > 180:
+                    old_launchers.append(int(pid))
+            except ValueError:
+                pass
+        low = args.lower()
+        if (("textractor.exe" in low or (gb and gb in low))
+                and "umu-run" not in low and "ps -eo" not in args):
+            game_alive = True
+    if old_launchers and not game_alive and not translate_bridge_ok():
+        return old_launchers
+    return []
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -635,6 +728,18 @@ class MainWindow(QMainWindow):
         self.launch_btn.clicked.connect(lambda: self.launch_selected(False))
         self.ab_btn = QPushButton("Launch unfiltered (A/B)")
         self.ab_btn.clicked.connect(lambda: self.launch_selected(True))
+        self.tr_btn = QPushButton("Translate")
+        self.tr_btn.setToolTip("Launch filtered + DeepL translation (Proton games with translate enabled)")
+        self.tr_btn.clicked.connect(lambda: self.launch_translate(False))
+        self.tr_setup_btn = QPushButton("Setup…")
+        self.tr_setup_btn.setToolTip("Launch with the Textractor window visible to pick the story thread (first run per game)")
+        self.tr_setup_btn.clicked.connect(lambda: self.launch_translate(True))
+        self.tr_pick_btn = QPushButton("Pick thread…")
+        self.tr_pick_btn.setToolTip("Sample live threads from the bridge and choose which one feeds translation (no Textractor clicking)")
+        self.tr_pick_btn.clicked.connect(self.pick_thread)
+        self.textbox_btn = QPushButton("Textbox")
+        self.textbox_btn.setToolTip("Open the translation readout window")
+        self.textbox_btn.clicked.connect(self.open_textbox)
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_game)
@@ -642,11 +747,21 @@ class MainWindow(QMainWindow):
         self.dry_btn.clicked.connect(self.preview_command)
         btnrow.addWidget(self.launch_btn)
         btnrow.addWidget(self.ab_btn)
+        btnrow.addWidget(self.tr_btn)
+        btnrow.addWidget(self.tr_setup_btn)
+        btnrow.addWidget(self.tr_pick_btn)
+        btnrow.addWidget(self.textbox_btn)
         btnrow.addWidget(self.stop_btn)
         btnrow.addWidget(self.dry_btn)
         rl.addLayout(btnrow)
         self.status_label = QLabel("Idle.")
         rl.addWidget(self.status_label)
+        self.tr_status = QLabel("")
+        self.tr_status.setToolTip("Translation bridge (Textractor :6677) status")
+        rl.addWidget(self.tr_status)
+        self.tr_timer = QTimer(self)
+        self.tr_timer.timeout.connect(self.poll_translate_status)
+        self.tr_timer.start(3000)
         self.log_view = QTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setPlaceholderText("Launch output appears here…")
@@ -681,6 +796,12 @@ class MainWindow(QMainWindow):
             self.detail_icon.setPixmap(QPixmap())
             return
         g = load_games().get(gid, {})
+        tr = g.get("translate", {})
+        tr_txt = ""
+        if tr.get("enabled") == "1":
+            tr_txt = (f"Translation: on ({tr.get('hook_code') or 'hook auto-detect'})"
+                      + (f", thread {tr.get('thread')}" if tr.get("thread") else "")
+                      + "<br>")
         self.detail_label.setText(
             f"<b>{g.get('name', gid)}</b><br>"
             f"Runner: {g.get('runner', '?')} &nbsp; Variant: {g.get('variant', '?')}<br>"
@@ -688,6 +809,7 @@ class MainWindow(QMainWindow):
             f"Overlay: {'on' if g.get('hud') == '1' else 'off'}<br>"
             + (f"Prefix: {g.get('prefix_mode', 'shared')}<br>" if g.get("runner") == "proton" else "")
             + (f"Language: {g.get('lang')}<br>" if g.get("lang") else "")
+            + tr_txt
             + f"Path: {g.get('path', '?')}")
         icon_path = resolve_icon(g.get("runner", ""), g.get("path", ""), gid)
         if icon_path:
@@ -831,6 +953,269 @@ class MainWindow(QMainWindow):
         self.stop_btn.setEnabled(True)
         self._running_gid = gid
 
+    def launch_translate(self, setup=False):
+        import datetime
+        gid = self.selected_id()
+        if not gid:
+            return
+        game = load_games().get(gid)
+        if not game:
+            return
+        if game.get("runner") != "proton":
+            QMessageBox.warning(self, "Translate",
+                                "Translation needs a Proton/Windows game.")
+            return
+        if game.get("translate", {}).get("enabled") != "1":
+            QMessageBox.warning(self, "Translate",
+                                "Enable translation for this game first (Edit…).")
+            return
+        if not setup and not (game.get("translate", {}).get("hook_code") or "").strip():
+            # No recorded hook yet: Textractor would come up hidden with
+            # nothing to insert. Redirect to a visible setup launch instead.
+            box = QMessageBox(self)
+            box.setWindowTitle("No hook recorded")
+            box.setText("No hook code is recorded for this game yet.\n"
+                        "Launch Setup (Textractor visible) to pick the story thread?")
+            setup_btn = box.addButton("Launch Setup…", QMessageBox.AcceptRole)
+            box.addButton(QMessageBox.Cancel)
+            box.exec()
+            if box.clickedButton() != setup_btn:
+                return
+            setup = True
+        if not os.path.exists(game["path"]):
+            QMessageBox.warning(self, "Translate", f"Path no longer exists:\n{game['path']}")
+            return
+        if self.proc is not None:
+            QMessageBox.information(self, "Translate", "A game is already running.")
+            return
+        if translate_bridge_ok():
+            # A session is live: offer to replace it (stop fully, then launch
+            # fresh) or just open the Textbox onto it. Never silently stack.
+            box = QMessageBox(self)
+            box.setWindowTitle("Translation session live")
+            box.setText("A translation session is already running.\n"
+                        "Replace it with a fresh launch, or open the Textbox?")
+            replace_btn = box.addButton("Stop && Launch new", QMessageBox.AcceptRole)
+            textbox_btn = box.addButton("Open Textbox", QMessageBox.ActionRole)
+            box.addButton(QMessageBox.Cancel)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked == textbox_btn:
+                self.open_textbox()
+                return
+            if clicked != replace_btn:
+                return
+            self.log_view.append("stopping live session for relaunch…")
+            self.status_label.setText("Stopping live session…")
+            QApplication.processEvents()
+            try:
+                subprocess.run([os.path.join(TRANSLATE_DIR, "vn-launch.sh"),
+                                "--stop-exe", game["path"]], timeout=90,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except (OSError, subprocess.SubprocessError):
+                pass
+            self.log_view.append("stopped.")
+        wedge = translate_wedge_pids(game.get("path", ""))
+        if wedge:
+            # Wedged earlier container (exes dead, wineserver held): every new
+            # launch would park behind `wineserver -w` forever.
+            box = QMessageBox(self)
+            box.setWindowTitle("Wedged translation session")
+            box.setText("A previous translation container is stuck (no game running, "
+                        "prefix held).\nNew launches stall behind it until cleared.")
+            kill_btn = box.addButton("Clear && Launch", QMessageBox.AcceptRole)
+            box.addButton(QMessageBox.Cancel)
+            box.exec()
+            if box.clickedButton() != kill_btn:
+                return
+            self.log_view.append("clearing wedged session…")
+            self.status_label.setText("Clearing wedged session…")
+            QApplication.processEvents()
+            try:
+                subprocess.run([os.path.join(TRANSLATE_DIR, "vn-launch.sh"),
+                                "--stop-exe", game["path"]], timeout=90,
+                               stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            except (OSError, subprocess.SubprocessError):
+                pass
+            self.log_view.append("cleared.")
+        token = stray_token(game)
+        if find_strays(token):
+            # Same trap as filter launches: a wedged earlier session (container
+            # alive, exes dead) parks every new launch behind `wineserver -w`.
+            box = QMessageBox(self)
+            box.setWindowTitle("Stale game processes")
+            box.setText(f"Leftover processes of '{game.get('name', gid)}' are still "
+                        f"running.\nA translation launch would stall behind them.")
+            kill_btn = box.addButton("Kill && Launch", QMessageBox.AcceptRole)
+            anyway_btn = box.addButton("Launch anyway", QMessageBox.DestructiveRole)
+            box.addButton(QMessageBox.Cancel)
+            box.exec()
+            clicked = box.clickedButton()
+            if clicked == kill_btn:
+                self.log_view.append("cleaned stray processes.")
+                kill_strays(token)
+            elif clicked != anyway_btn:
+                return
+        argv = build_translate_command(game, gid, setup)
+        env = QProcessEnvironment.systemEnvironment()
+        stamp = datetime.datetime.now().strftime("%H:%M:%S")
+        self.log_view.clear()
+        mode = "setup (pick the story thread in Textractor)" if setup else "filtered + translation"
+        self.log_view.append(f"[{stamp}] {game.get('name', gid)} — {mode}")
+        self.log_view.append(f"$ {' '.join(argv)}\n")
+        self.proc = QProcess(self)
+        self.proc.setProgram(argv[0])
+        self.proc.setArguments(argv[1:])
+        self.proc.setProcessEnvironment(env)
+        self.proc.setProcessChannelMode(QProcess.MergedChannels)
+        self.proc.readyReadStandardOutput.connect(self._read_log)
+        self.proc.finished.connect(self._finished)
+        self.proc.start()
+        if not self.proc.waitForStarted(10000):
+            QMessageBox.warning(self, "Translate", "Failed to start the translation launcher.")
+            self.proc = None
+            return
+        self.status_label.setText(f"Running {game.get('name', '')} — {mode}…")
+        self.stop_btn.setEnabled(True)
+        self._running_gid = gid
+        self._running_translate = True
+        self._setup_session = setup
+
+    def pick_thread(self):
+        """Sample live vn-bridge v2 threads and store the chosen one as
+        games.json translate.thread (name). No Textractor clicking needed."""
+        import time as _time
+        gid = self.selected_id()
+        if not gid:
+            return
+        games = load_games()
+        game = games.get(gid)
+        if not game:
+            return
+        if not translate_bridge_ok():
+            box = QMessageBox(self)
+            box.setWindowTitle("Bridge down")
+            box.setText("No live translation session (bridge :6677 silent).\n"
+                        "Launch Setup first so threads start flowing?")
+            setup_btn = box.addButton("Launch Setup…", QMessageBox.AcceptRole)
+            box.addButton(QMessageBox.Cancel)
+            box.exec()
+            if box.clickedButton() == setup_btn:
+                self.launch_translate(True)
+            return
+        try:
+            sys.path.insert(0, TRANSLATE_DIR)
+            from hook_client import parse_thread, clean_ja
+            import websocket
+        except Exception as e:
+            QMessageBox.warning(self, "Pick thread", f"Picker unavailable: {e}")
+            return
+        self.status_label.setText("Sampling threads… (advance the game text)")
+        QApplication.processEvents()
+        buckets = {}
+        try:
+            ws = websocket.create_connection("ws://127.0.0.1:6677", timeout=15)
+            ws.settimeout(1.0)
+            end = _time.time() + 20
+            while _time.time() < end:
+                try:
+                    msg = ws.recv()
+                except Exception:
+                    continue
+                meta, text = parse_thread(msg)
+                if meta is None:
+                    continue
+                ja = clean_ja(text)
+                if not ja:
+                    continue
+                key = (meta["number"], meta["name"], meta["addr"])
+                b = buckets.setdefault(key, {"n": 0, "last": ""})
+                b["n"] += 1
+                b["last"] = ja[-120:]
+            ws.close()
+        except Exception as e:
+            QMessageBox.warning(self, "Pick thread", f"Sampling failed: {e}")
+            self.status_label.setText("Idle.")
+            return
+        if not buckets:
+            QMessageBox.information(
+                self, "Pick thread",
+                "No tagged threads seen in 15s.\nAdvance the in-game text and retry.\n"
+                "(Needs the v2 bridge: relaunch after updating Textractor.)")
+            self.status_label.setText("Idle.")
+            return
+        from PySide6.QtWidgets import QDialog, QVBoxLayout, QListWidget, QDialogButtonBox
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Pick thread — {game.get('name', gid)}")
+        lay = QVBoxLayout(dlg)
+        lst = QListWidget(dlg)
+        cur_thread = ((game.get("translate") or {}).get("thread") or "").strip()
+        for (num, name, addr), b in sorted(buckets.items()):
+            mark = "  ← current" if cur_thread in (name, str(num)) else ""
+            item = QListWidgetItem(f"{name}  (#{num}, {b['n']} lines){mark}\n{b['last']}")
+            item.setData(Qt.UserRole, name)
+            lst.addItem(item)
+        follow = QListWidgetItem("Follow Textractor's own selection (*)")
+        follow.setData(Qt.UserRole, "")
+        lst.addItem(follow)
+        lay.addWidget(lst)
+        btns = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        btns.accepted.connect(dlg.accept)
+        btns.rejected.connect(dlg.reject)
+        lay.addWidget(btns)
+        self.status_label.setText("Idle.")
+        if dlg.exec() != QDialog.Accepted or not lst.currentItem():
+            return
+        thread = lst.currentItem().data(Qt.UserRole)
+        games[gid].setdefault("translate", {})["thread"] = thread
+        save_games(games)
+        self.show_details()
+        QMessageBox.information(self, "Pick thread",
+                                f"Thread saved: {thread or 'follow Textractor (*)'}.\n"
+                                f"Open the Textbox to read from it.")
+
+    def open_textbox(self):
+        import subprocess as _sp
+        argv = [os.path.join(TRANSLATE_DIR, "textbox.py"), "--start-workers"]
+        try:
+            game = load_games().get(self.selected_id() or "")
+            thread = ((game or {}).get("translate") or {}).get("thread", "").strip()
+            if thread:
+                argv += ["--thread", thread]
+        except Exception:
+            pass
+        # Single instance: two textboxes = two translators fighting over one
+        # DeepL page (and doubled bridge clients). Focus nothing — just refuse.
+        try:
+            out = subprocess.run(["pgrep", "-f", "[t]extbox.py --start-workers"],
+                                 capture_output=True, text=True, timeout=10).stdout
+            if out.strip():
+                self.log_view.append("textbox: already running (one instance only).")
+                return
+        except (OSError, subprocess.SubprocessError):
+            pass
+        # Keep stderr: fatal tracebacks used to vanish into DEVNULL, which is
+        # how a rendering bug shipped invisible (see translate.md self-test).
+        try:
+            logdir = os.path.expanduser("~/.cache/anime4k")
+            os.makedirs(logdir, exist_ok=True)
+            logf = open(os.path.join(logdir, "textbox.log"), "ab", buffering=0)
+        except OSError:
+            logf = _sp.DEVNULL
+        try:
+            _sp.Popen(argv, stdout=logf, stderr=logf,
+                      stdin=_sp.DEVNULL, start_new_session=True)
+            self.log_view.append("textbox: started (stderr -> ~/.cache/anime4k/textbox.log)")
+        except (OSError, _sp.SubprocessError):
+            QMessageBox.warning(self, "Textbox", "Could not open the translation window.")
+
+    def poll_translate_status(self):
+        try:
+            up = translate_bridge_ok()
+        except Exception:
+            up = False
+        self.tr_status.setText("● translation bridge (:6677)" if up else "○ bridge down")
+
     def preview_command(self):
         gid = self.selected_id()
         if not gid:
@@ -868,7 +1253,29 @@ class MainWindow(QMainWindow):
         self.status_label.setText("Idle.")
         self.stop_btn.setEnabled(False)
         self.proc = None
+        gid = self._running_gid
         self._running_gid = None
+        if getattr(self, "_running_translate", False):
+            self._running_translate = False
+            # A translate session just ended: if the user clicked "Save
+            # hook(s)" in Textractor (Setup), record those codes into the
+            # library automatically — nothing is ever hand-copied.
+            if gid:
+                game = load_games().get(gid) or {}
+                if game.get("path"):
+                    try:
+                        r = subprocess.run(
+                            [sys.executable,
+                             os.path.join(TRANSLATE_DIR, "harvest-hooks.py"),
+                             "--exe", game["path"], "--game", gid],
+                            capture_output=True, text=True, timeout=30)
+                        for line in (r.stdout + r.stderr).splitlines():
+                            if line.strip():
+                                self.log_view.append(line)
+                    except (OSError, subprocess.SubprocessError):
+                        pass
+                    self.refresh_list()
+                    self.show_details()
 
     def open_settings(self):
         dlg = SettingsDialog(self)

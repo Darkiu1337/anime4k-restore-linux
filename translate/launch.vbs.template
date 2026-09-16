@@ -1,0 +1,6 @@
+Dim sh
+Set sh = CreateObject("WScript.Shell")
+sh.CurrentDirectory = "@HOOKER_DIR@"
+sh.Run """@HOOKER_EXE@"" /p@GAME_BASE@", @HOOKER_STYLE@, False
+sh.CurrentDirectory = "@GAME_DIR@"
+sh.Run "@GAME_EXE@", 1, True

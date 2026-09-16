@@ -1,0 +1,300 @@
+diff --git i/.cargo/config.toml w/.cargo/config.toml
+index ba54493..0e60fcc 100644
+--- i/.cargo/config.toml
++++ w/.cargo/config.toml
+@@ -1,2 +1,2 @@
+-[build]
+-target = "x86_64-pc-windows-gnu"
++[target.i686-pc-windows-gnu]
++linker = "i686-w64-mingw32-gcc"
+diff --git i/src/lib.rs w/src/lib.rs
+index 3fd19f1..2fb73b7 100644
+--- i/src/lib.rs
++++ w/src/lib.rs
+@@ -47,14 +47,26 @@ pub extern "C" fn OnNewSentence(
+     // because the text hook might be bad and contain random bytes
+     let sentence_as_lossy_string = sentence_as_cstring.to_string_lossy();
+     let sentence_info = SentenceInfo::new(sentence_info);
+-    let current_select = sentence_info.get_current_select();
+-    let text_number = sentence_info.get_text_number();
+-    if let CurrentSelect::UserSelectedTextThread(_) = current_select {
+-        if let TextNumber::TextThread(_) = text_number {
+-            SERVER
+-                .get_or_init(start_websocket_server)
+-                .send_message(sentence_as_lossy_string.into());
+-        }
++    let selected = sentence_info.get_current_select() != CurrentSelect::NotUserSelectedTextThread;
++    if let TextNumber::TextThread(number) = sentence_info.get_text_number() {
++        // Thread-tagged broadcast (vn-bridge v2): every text thread is
++        // forwarded with its stable identity so the native picker can list
++        // candidates and the pipeline can filter without touching
++        // Textractor's thread selection. Format:
++        //   ~#<number>[* if Textractor-selected]~<hookaddr-hex>~<name>~<text>
++        let tag = format!(
++            "~#{}{}~{}~{}~",
++            number,
++            if selected { "*" } else { "" },
++            format!("{:X}", sentence_info.get_hook_address()),
++            sentence_info.get_text_name()
++        );
++        let mut tagged = String::with_capacity(tag.len() + sentence_as_lossy_string.len());
++        tagged.push_str(&tag);
++        tagged.push_str(&sentence_as_lossy_string);
++        SERVER
++            .get_or_init(start_websocket_server)
++            .send_message(tagged.into());
+     }
+ 
+     sentence
+@@ -67,9 +79,9 @@ pub extern "system" fn DllMain(
+     _lpv_reserved: LPVOID,
+ ) -> BOOL {
+     if fdw_reason == DLL_PROCESS_ATTACH {
+-        SERVER
+-            .set(start_websocket_server())
+-            .unwrap_or_else(|_| panic!("WebSocket server should not have started yet"));
++        // Ignore double-initialization (extension reloaded): never panic in
++        // the host process over our own bookkeeping.
++        let _ = SERVER.set(start_websocket_server());
+     }
+ 
+     TRUE
+diff --git i/src/mio_channel.rs w/src/mio_channel.rs
+index cf2331d..f961945 100644
+--- i/src/mio_channel.rs
++++ w/src/mio_channel.rs
+@@ -35,6 +35,18 @@ impl<T> SyncSender<T> {
+ 
+         Ok(())
+     }
++
++    /// Non-blocking send for the Textractor host thread: never blocks the
++    /// hooker. A full queue drops the newest message (translation consumers
++    /// always get the next line anyway); a gone server is silently ignored.
++    /// Never panics: this runs in Textractor's process.
++    pub fn send_lossy(&self, t: T) {
++        if self.tx.try_send(t).is_ok() {
++            if let Some(waker) = &*self.waker.lock().unwrap_or_else(|e| e.into_inner()) {
++                let _ = waker.wake();
++            }
++        }
++    }
+ }
+ 
+ pub struct Receiver<T> {
+diff --git i/src/textractor.rs w/src/textractor.rs
+index 3915fc3..9030228 100644
+--- i/src/textractor.rs
++++ w/src/textractor.rs
+@@ -3,6 +3,8 @@ use std::ffi::{c_char, CStr};
+ enum PropertyName {
+     CurrentSelect,
+     TextNumber,
++    HookAddress,
++    TextName,
+ }
+ 
+ impl PropertyName {
+@@ -10,6 +12,8 @@ impl PropertyName {
+         match self {
+             PropertyName::CurrentSelect => "current select",
+             PropertyName::TextNumber => "text number",
++            PropertyName::HookAddress => "hook address",
++            PropertyName::TextName => "text name",
+         }
+     }
+ }
+@@ -59,8 +63,7 @@ impl SentenceInfo {
+         }
+     }
+ 
+-    pub fn get_text_number(&self) -> TextNumber {
+-        let value = self
++    pub fn get_text_number(&self) -> TextNumber {        let value = self
+             .get_property_value(PropertyName::TextNumber)
+             .unwrap_or_else(|| {
+                 panic!(
+@@ -77,6 +80,43 @@ impl SentenceInfo {
+         }
+     }
+ 
++    /// Stable hook address for this thread (0 when unavailable). Unlike the
++    /// session-local text number, the address identifies the same hook across
++    /// sessions, so the native picker can re-find a chosen thread.
++    pub fn get_hook_address(&self) -> i64 {
++        self.get_property_value(PropertyName::HookAddress)
++            .unwrap_or(0)
++    }
++
++    /// Thread/hook display name (e.g. "Anim3", "TextOutW"). Never panics:
++    /// falls back to "?" on null/unreadable pointers. NOTE: upstream passes
++    /// "text name" as (int64_t)thread.name.c_str() — a wchar_t* (UTF-16LE),
++    /// NOT a char* — so this must decode UTF-16 or only the first letter
++    /// survives (the trailing NUL of 'A\0n\0i\0m\0…' looks like a terminator
++    /// to a byte-string reader).
++    pub fn get_text_name(&self) -> String {
++        use widestring::U16CString;
++        let name = self
++            .get_property_value(PropertyName::TextName)
++            .unwrap_or(0) as *const u16;
++        if name.is_null() {
++            return "?".to_string();
++        }
++        // SAFETY: Textractor provides a nul-terminated UTF-16 name here
++        // (see GetSentenceInfo in upstream GUI/mainwindow.cpp).
++        let s = unsafe { U16CString::from_ptr_str(name) }.to_string_lossy();
++        let s: String = s
++            .chars()
++            .map(|c| if c == '~' || c.is_control() { '?' } else { c })
++            .take(64)
++            .collect();
++        if s.is_empty() {
++            "?".to_string()
++        } else {
++            s
++        }
++    }
++
+     fn get_property_value(&self, property_name: PropertyName) -> Option<i64> {
+         let mut pointer = self.info_array;
+ 
+diff --git i/src/websocket.rs w/src/websocket.rs
+index aa866fb..22efe51 100644
+--- i/src/websocket.rs
++++ w/src/websocket.rs
+@@ -224,9 +224,15 @@ impl ConnectedState {
+                         tungstenite::Error::Io(ref error) => match error.kind() {
+                             io::ErrorKind::WouldBlock => return Ok(None),
+                             io::ErrorKind::Interrupted => continue,
+-                            _ => return Err(From::from(e)),
++                            _ => {
++                                eprintln!("vn-bridge: closing client on read error: {:?}", e);
++                                return Ok(Some(self.take_closed()));
++                            }
+                         },
+-                        _ => return Err(From::from(e)),
++                        _ => {
++                            eprintln!("vn-bridge: closing client on read error: {:?}", e);
++                            return Ok(Some(self.take_closed()));
++                        }
+                     },
+                 };
+             },
+@@ -254,6 +260,26 @@ impl ConnectedState {
+         }
+     }
+ 
++    /// Convert this connection into a gracefully closed one. Used instead of
++    /// propagating errors: this code runs in Textractor's process and must
++    /// never panic on ordinary network conditions (RST disconnects, Wine
++    /// socket quirks). The poll loop already sweeps Closed entries.
++    fn take_closed(&mut self) -> WebSocketState {
++        let state = std::mem::replace(
++            self,
++            ConnectedState {
++                websocket: WebSocket::from_raw_socket(
++                    Box::new(EmptyStream),
++                    Role::Server,
++                    None,
++                ),
++                messages: VecDeque::new(),
++                write: WriteState::Unwritable,
++            },
++        );
++        WebSocketState::Closed(state.websocket)
++    }
++
+     fn send_message(&mut self) -> Result<Option<WebSocketState>, WebSocketError> {
+         if let Some(msg) = self.messages.pop_front() {
+             if let Err(e) = self
+@@ -283,9 +309,15 @@ impl ConnectedState {
+                         // message back into our buffer here
+                         io::ErrorKind::WouldBlock => self.write = WriteState::Unwritable,
+                         io::ErrorKind::Interrupted => {}
+-                        _ => return Err(From::from(e)),
++                        _ => {
++                            eprintln!("vn-bridge: closing client on send error: {:?}", e);
++                            return Ok(Some(self.take_closed()));
++                        }
+                     },
+-                    _ => return Err(From::from(e)),
++                    _ => {
++                        eprintln!("vn-bridge: closing client on send error: {:?}", e);
++                        return Ok(Some(self.take_closed()));
++                    }
+                 }
+             }
+         }
+@@ -308,7 +340,7 @@ impl Server {
+     }
+ 
+     pub fn start(self) -> ServerStarted {
+-        let (sender, mut receiver) = mio_channel::sync_channel::<Arc<str>>(10);
++        let (sender, mut receiver) = mio_channel::sync_channel::<Arc<str>>(256);
+         let mut poll =
+             Poll::new().unwrap_or_else(|e| panic!("failed to create poll instance: {:?}", e));
+         let mut events = Events::with_capacity(128);
+@@ -355,7 +387,8 @@ impl Server {
+                                         break;
+                                     }
+                                     Err(e) => {
+-                                        panic!("failed to accept connection: {:?}", e);
++                                        eprintln!("vn-bridge: accept error (client gone?): {:?}", e);
++                                        break;
+                                     }
+                                 };
+ 
+@@ -382,7 +415,10 @@ impl Server {
+                                 continue;
+                             }
+ 
+-                            if let Ok(msg) = receiver.try_recv() {
++                            // Drain everything queued (not just one message) so a
++                            // burst of sentences can never back up into the
++                            // host thread's send path.
++                            while let Ok(msg) = receiver.try_recv() {
+                                 let mut closed_connection_tokens = Vec::new();
+                                 for (token, state) in token_to_websockets.iter_mut() {
+                                     state
+@@ -417,17 +453,19 @@ impl Server {
+                                     Some(stream) => {
+                                         let mut state =
+                                             WebSocketState::Unconnected(UnconnectedState);
+-                                        state
++                                        if state
+                                             .next_state(WebSocketMessage::UpgradeWebSocket(
+                                                 Box::new(stream),
+                                             ))
+-                                            .unwrap_or_else(|e| {
+-                                                panic!(
+-                                                    "failed to upgrade tcp stream to WebSocket: \
+-                                                     {:?}",
+-                                                    e
+-                                                )
+-                                            });
++                                            .is_err()
++                                        {
++                                            // Client vanished mid-handshake (common with
++                                            // short-lived debug clients under Wine): drop it.
++                                            eprintln!(
++                                                "vn-bridge: dropping failed handshake"
++                                            );
++                                            continue;
++                                        }
+                                         // There is no guarantee that another
+                                         // readiness event will be delivered
+                                         // until the readiness event has been
+@@ -511,11 +549,7 @@ impl Server {
+ 
+ impl ServerStarted {
+     pub fn send_message(&self, message: Arc<str>) {
+-        self.sender.send(message.clone()).unwrap_or_else(|e| {
+-            panic!(
+-                "failed to send text `{}` to WebSocket clients: {:?}",
+-                message, e
+-            )
+-        });
++        // Non-blocking, never panics: runs on Textractor's sentence thread.
++        self.sender.send_lossy(message);
+     }
+ }

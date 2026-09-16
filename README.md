@@ -53,6 +53,9 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
 * **Wine prefixes**: one shared prefix by default, per-game opt-in.
 * **Game locale selection** (Proton/native) for titles that need it
   (e.g. Japanese VNs).
+* **VN translation** (Proton): per-game DeepL toggle — hooked Japanese dialogue
+  translated live into a Luna-style textbox; composes with the filter in one
+  launch. Details: `docs/translate.md`.
 
 ## Use cases
 
@@ -79,6 +82,7 @@ Details: `requirements.md`. One shared Wine prefix lives under
 
 * `scripts/` — TUI, shared core, per-runner launchers
 * `gui/` — PySide6 frontend (same runners, same library)
+* `translate/` — VN translation: hook launcher, DeepL bridge, Luna-style textbox
 * `shaders/` — ported `.fx` files + `gen_restore_fx.py` port generator
 * `docs/` — `limits.md` (constraints), `assets/` (gallery + usage video)
 

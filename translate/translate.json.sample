@@ -1,0 +1,25 @@
+{
+  "games": [
+    {
+      "id": "mlove",
+      "name": "MamaLove (mlove)",
+      "exe": "/path/to/mlove/mlove.exe",
+      "gameid": "mlove",
+      "lang": "ja_JP.UTF-8",
+      "hook_code": "HSX10@54DC0:mlove.exe",
+      "hook_code_alt": "HSX1O@54DC0:mlove.exe",
+      "hook_mode": "engine",
+      "thread_note": "example entry \u2014 replace with your game"
+    },
+    {
+      "id": "mmg",
+      "name": "mmg (Start)",
+      "exe": "/path/to/mmg/Data/Start.exe",
+      "gameid": "mmg-start",
+      "lang": "ja_JP.UTF-8",
+      "hook_code": "",
+      "hook_mode": "unknown",
+      "thread_note": "example entry \u2014 replace with your game"
+    }
+  ]
+}

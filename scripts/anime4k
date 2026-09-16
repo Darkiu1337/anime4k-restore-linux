@@ -29,7 +29,7 @@ lib_ids() { jq -r '.games | keys[]' "$LIB" 2>/dev/null; }
 lib_get() { jq -r --arg id "$2" --arg f "$1" '.games[$id][$f] // empty' "$LIB" 2>/dev/null; }
 lib_names() {
   # "id — name (runner, variant)" lines for pickers; echoes id after selection
-  jq -r '.games | to_entries[] | "\(.key)\t\(.value.name) (\(.value.runner), \(.value.variant))"' "$LIB" 2>/dev/null
+  jq -r '.games | to_entries[] | "\(.key)\t\(.value.name) (\(.value.runner), \(.value.variant)\(if .value.translate.enabled == "1" then ", +translate" else "" end))"' "$LIB" 2>/dev/null
 }
 
 # Real Vulkan device names from the loader (plus "auto" = discrete GPU when
@@ -129,6 +129,11 @@ cmd_add() {
   if [ "$runner" = "proton" ]; then
     gum confirm "Separate Wine prefix for this game? (default: shared)" && pmode="game"
   fi
+  tr_enabled="0"; tr_hook=""
+  if [ "$runner" = "proton" ] && gum confirm "Translate Japanese dialogue via DeepL?"; then
+    tr_enabled="1"
+    tr_hook="$(gum input --header "Hook code (optional — auto-detect at first setup)" --placeholder "HSX10@54DC0:game.exe")"
+  fi
   name="$(gum input --header "Display name" --placeholder "$(basename "$path")")"
   name="${name:-$(basename "$path")}"
   id="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')"
@@ -140,7 +145,8 @@ cmd_add() {
   jq --arg id "$id" --arg name "$name" --arg runner "$runner" --arg path "$path" \
      --arg variant "$variant" --arg gpu "$gpu" --arg fps "$fps" --arg hud "$hud" \
      --arg pmode "$pmode" --arg lang "$lang" \
-     '.games[$id] = {name:$name, runner:$runner, path:$path, variant:$variant, gpu:$gpu, fps:$fps, hud:$hud, prefix_mode:$pmode, lang:$lang}' \
+     --arg tr_enabled "$tr_enabled" --arg tr_hook "$tr_hook" \
+     '.games[$id] = {name:$name, runner:$runner, path:$path, variant:$variant, gpu:$gpu, fps:$fps, hud:$hud, prefix_mode:$pmode, lang:$lang, translate:{enabled:$tr_enabled, hook_code:$tr_hook, hook_mode:"unknown"}}' \
      "$LIB" > "$LIB.tmp" && mv "$LIB.tmp" "$LIB"
   echo "added '$name' as id '$id'."
 }
@@ -173,6 +179,21 @@ cmd_launch() {
   local hudflag=() langflag=()
   [ "$hud" = "1" ] && hudflag=(--hud)
   [ -n "$lang" ] && langflag=(--lang "$lang")
+  local tr_enabled
+  tr_enabled="$(jq -r --arg id "$id" '.games[$id].translate.enabled // "0"' "$LIB" 2>/dev/null)"
+  if [ "$runner" = "proton" ] && [ "$tr_enabled" = "1" ]; then
+    # Filter + DeepL translation in one launch (translate/vn-launch.sh).
+    # No recorded hook yet -> setup mode (Textractor visible) so the story
+    # thread can be picked; the recorded hook auto-inserts either way.
+    tr_hook="$(jq -r --arg id "$id" '.games[$id].translate.hook_code // empty' "$LIB" 2>/dev/null)"
+    tr_setup=()
+    if [ -z "$tr_hook" ]; then
+      echo "no hook recorded for '$id': launching SETUP (pick the story thread in Textractor)"
+      tr_setup=(--setup)
+    fi
+    exec "$SCRIPT_DIR/../translate/vn-launch.sh" --exe "$path" --gameid "$id" \
+      "${langflag[@]}" ${tr_hook:+--hook-code "$tr_hook"} "${tr_setup[@]}" --filter "$variant"
+  fi
   case "$runner" in
     proton)
       local dev=()
@@ -210,6 +231,7 @@ cmd_edit() {
   if [ "$_erunner" = "proton" ] || [ "$_erunner" = "native" ]; then
     fields="$fields lang"
   fi
+  [ "$_erunner" = "proton" ] && fields="$fields translate translate_hook translate_thread"
   unset _erunner
   # shellcheck disable=SC2086
   field="$(gum choose --header "Edit what?" $fields)"
@@ -226,6 +248,26 @@ cmd_edit() {
         new="$(gum input --header "Locale" --placeholder "ja_JP.UTF-8")"
       fi
       [ "$new" = "System" ] && new=""
+      ;;
+    translate)
+      gum confirm "Translate Japanese dialogue via DeepL?" && new="1" || new="0"
+      jq --arg id "$id" --arg v "$new" '.games[$id].translate.enabled = $v' "$LIB" > "$LIB.tmp" && mv "$LIB.tmp" "$LIB"
+      echo "updated '$id': translate.enabled = $new"
+      return 0
+      ;;
+    translate_hook)
+      new="$(gum input --header "Hook code (empty = auto-detect at setup)" --value "$(jq -r --arg id "$id" '.games[$id].translate.hook_code // empty' "$LIB")")"
+      jq --arg id "$id" --arg v "$new" '.games[$id].translate.hook_code = $v' "$LIB" > "$LIB.tmp" && mv "$LIB.tmp" "$LIB"
+      echo "updated '$id': translate.hook_code = ${new:-<auto-detect>}"
+      return 0
+      ;;
+    translate_thread)
+      cur="$(jq -r --arg id "$id" '.games[$id].translate.thread // "*"' "$LIB")"
+      new="$(gum input --header "Thread name/number for the textbox (empty or * = follow Textractor's selection)" --value "$cur")"
+      new="${new:-*}"
+      jq --arg id "$id" --arg v "$new" '.games[$id].translate.thread = $v' "$LIB" > "$LIB.tmp" && mv "$LIB.tmp" "$LIB"
+      echo "updated '$id': translate.thread = $new"
+      return 0
       ;;
   esac
   if [ "$field" != "lang" ] && [ -z "$new" ]; then

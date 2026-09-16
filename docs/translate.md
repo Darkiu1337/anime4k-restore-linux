@@ -1,0 +1,157 @@
+# VN translation
+
+Hooked Japanese dialogue from Proton VNs, translated live via DeepL into a
+Luna-style textbox — composed with the Restore filter in a single launch.
+`translate/` holds the implementation; this page is the operator manual.
+
+## Flow
+
+1. **Enable** per game: GUI game wizard/edit (Translation page) or
+   `anime4k edit` → `translate`. Proton/Windows games only.
+2. **First run (Setup)**: `Setup…` in the GUI (or `anime4k` launch, which
+   auto-uses setup while no hook is recorded). Textractor opens **already
+   attached** to the game with the saved-thread list loaded. Advance the
+   game text, then either:
+   - click the story thread in Textractor and press **Save hook(s)** — the
+     hook code is harvested into the game entry automatically at session
+     end (nothing is copied by hand), or
+   - use **Pick thread…** in the GUI: it samples every live thread from
+     the bridge (name + last line) and you click the story thread — no
+     Textractor interaction at all.
+3. **Daily play**: `Translate` (Textractor hidden). The recorded hook
+   auto-inserts (seeded into Textractor's SavedHooks), the textbox follows
+   the recorded thread. Open the Textbox (`vn-textbox` or the GUI button)
+   and read; it toggles EN-only / JA+EN.
+4. **End**: Stop in the UI (or Ctrl-C); `--stop` also drops the wineserver
+   so the next launch boots fresh.
+
+## Architecture (one picture)
+
+One `umu-run` → `wscript` → per-game `C:\hook\<id>.vbs` starts Textractor
+(`/pgame.exe` = attach on boot) + game in a single Wine session (one
+wineserver — dual containers serialize and never boot, proven twice).
+Auto-attach comes from `SavedHooks.txt`/`SavedGames.txt`, seeded by the
+launcher from the game entry (recorded hook auto-inserts; user-saved lines
+always win). The v2 bridge streams **every** thread tagged with its
+identity (`~#<num>[*]~<addr>~<name>~<text>`, `*` = Textractor's own
+selection) on `:6677`; native code filters by thread, translates (Brave CDP
+DeepL primary, local DLX fallback) and displays.
+
+Filter + translation compose: `vn-launch.sh --filter <variant>` applies the
+same vkBasalt mechanism as `proton-anime4k.sh`. A/B unfiltered launches stay
+untranslated by design.
+
+## Thread picking without Textractor
+
+The v2 bridge tags every sentence with thread number, hook address, and
+hook name (stable across sessions). `Pick thread…` samples 20s of live
+traffic and lists candidates with their last line; choosing one stores it
+as the game's `translate.thread` and the Textbox/hook_client then follow
+that thread by name (falling back to Textractor's selection if unset —
+stock-bridge installs simply keep following the selection). Manual control:
+`hook_client.py --thread <name|number|hex-addr|*>`, `textbox.py --thread …`,
+`vn-translate --thread …`.
+
+## Hook ladder (unknown engine? work down, stop at first clean thread)
+
+1. **Engine hook** (`vnreng: INSERT <name>` at attach): pick it (picker or
+   Textractor), remove the generic bulk (see rule below), Save hooks.
+2. **Minimal generic set**: no engine hook → keep only `TextOut`/`ExtTextOut`
+   (+ `W`/`A` as needed); add hooks only while silent.
+3. **Junk filters**: Textractor's Remove Repeated Characters/Phrases + Regex
+   Filter for GDI noise.
+4. **Hook search last**: crash-prone — in-game save first.
+
+## Crash doctrine (proven across sessions, do not rediscover)
+
+* **Remove, don't deselect.** Unselected hooks stay inserted and keep
+  processing. Four crashes with the GDI bulk inserted, zero Anim3-only —
+  but bulk is *not* universally fatal (one title stable with everything),
+  so removal is remedy, not ritual. Record per-game behavior.
+* **cwd decides engine detection.** Launchers must set each program's working
+  directory (VBS `CurrentDirectory`); without it, engine hooks don't insert.
+* **Never bare-TCP `:6677`.** The stock bridge panics the host on
+  non-handshake connections (and on abrupt disconnects); every health check
+  must complete a real websocket handshake. The hardened fork (default)
+  degrades gracefully instead.
+* **Registered `.xdll`, not `.dll`.** Textractor loads the renamed copy —
+  install any bridge build under BOTH filenames or sessions silently run
+  the other one.
+* **SavedHooks/SavedGames lines must be bare-LF/CR-stripped**: upstream
+  exact-matches them against process paths; a stray `\r` (Wine CRLF
+  defaults) silently disables auto-attach. The launcher normalizes both.
+* **Stale wineserver wedges new containers** (launcher exits silently, nothing
+  spawns). The shipped launcher blocks on the *game*, `--stop` also drops the
+  server, the GUI refuses double-launches and offers Stop && Launch /
+  Clear && Launch on live/wedged state. Always stop before relaunching.
+* **One ws client besides Textractor itself.** Extra ad-hoc taps raise crash
+  odds on stock; the fixed bridge tolerates them.
+* Textractor's `SavedHooks.txt` writes survive clean exits; the library
+  (`translate.hook_code`, auto-harvested) is the portable source of truth.
+
+## Bridge builds
+
+* **Stock** kuroahna 0.2.0 (upstream, MIT/Apache): works, fragile (see
+  above); only the Textractor-selected thread flows, untagged.
+* **Fixed fork v2** (default): host-safety patches (no panics,
+  non-blocking lossy host send, 256-deep drain-all queue, double-init
+  tolerated) **plus** the thread-tagged broadcast that powers the native
+  picker. A/B proven. Rebuild from `translate/bridge-fork.patch`
+  (rustup stable + `i686-pc-windows-gnu` + mingw-w64-gcc; the fork's
+  `textractor.rs` decodes `"text name"` as UTF-16 — upstream passes a
+  `wchar_t*`); prebuilt DLL ships as release asset `translate-v2`,
+  sha256-verified at install.
+
+## Textbox on Hyprland (Click + Top)
+
+* **Click** = click-through. Clicks on the text area fall through to the game
+  below; hovering either bar (titlebar or toolbar) restores full input so
+  Top/Click stay clickable and the window stays draggable. (Technical note:
+  this uses `Qt.WindowTransparentForInput`, which works on Wayland with Qt 6
+  — verified at the protocol level as an empty surface input region — plus a
+  bars-only input mask as the hover guard. `QWindow.setMask()` alone cannot
+  do it: Qt normalizes empty masks to null, which means full input.)
+* **Top** = keep on top. Qt's stay-on-top hint is ignored by Hyprland, so the
+  button also floats + pins the window via `hyprctl` (best-effort: skipped
+  silently off Hyprland). The pin is re-asserted after the surface
+  recreations that flag toggles cause, so Top survives Click toggles.
+* For a permanent setup (no per-launch Top press), add to your Hyprland
+  config (lua syntax, Hyprland ≥ 0.55):
+  ```lua
+  hl.window_rule({
+    name = "vn-translate-overlay",
+    match = { title = "^vn-translate$" },
+    float = true,
+    pin = true,
+  })
+  ```
+  Verified on Hyprland 0.56 + Qt 6.11.
+
+## Per-game notes
+
+* **mlove** (Anim engine): hook `HSX10@54DC0:mlove.exe`, story thread
+  `Anim3` (addr `454DC0`). Anim3-only required (GDI bulk crashed 4×).
+  Reference title.
+* **mmg / Start.exe** (Atelier KAGUYA2/6 engine hooks): generic-ladder
+  title, bulk-tolerant so far.
+
+## Install behavior
+
+`install.sh` offers translation support (default Yes): fetches the pinned
+Textractor bundle + bridge (fixed v2 asset preferred, stock fallback),
+installs into the shared prefix, symlinks `vn-launch` / `vn-textbox`.
+Settings come from `translate/config.json` and the games registry from
+`translate/translate.json` — both seeded from their `.sample` files on
+first install (never overwritten); the Python entry points also start on a
+bare clone by falling back to the samples/builtins. DLX server is opt-in
+(offline fallback on `:1188`). `requirements.md` lists every dependency per
+distro. `install.sh --check-only` audits the translate deps too.
+
+## Limits
+
+* Proton/Windows games only (hook injection needs Wine + one shared session).
+* One live session at a time (shared prefix design).
+* The v2 thread picker needs live text: advance the game while sampling
+  (the dialog says so); thread picking by name needs the v2 bridge —
+  stock installs follow Textractor's selection instead.
+* Sentence-MT quirks: speaker names romanize inconsistently across lines.
