@@ -714,6 +714,20 @@ def main():
         sys.exit(0)
     if diagnose:
         sys.exit(0)
+    if "--screenshot" in sys.argv[1:]:
+        from PySide6.QtQuick import QQuickWindow
+        idx = sys.argv.index("--screenshot")
+        out = sys.argv[idx + 1] if idx + 1 < len(sys.argv) else "/tmp/anime4k-gui.png"
+        roots = engine.rootObjects()
+        if roots:
+            win = roots[0]
+            win.setWidth(1100)
+            win.setHeight(700)
+            for _ in range(20):
+                app.processEvents()
+            img = win.grabWindow()
+            print("screenshot:", out, "ok=" + str(img.save(out)))
+        sys.exit(0)
     if not engine.rootObjects():
         sys.exit(1)
     sys.exit(app.exec())
