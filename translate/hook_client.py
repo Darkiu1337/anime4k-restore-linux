@@ -8,8 +8,13 @@ own selection, the default).
 import json
 import re
 import sys
+import time
 
 import websocket
+
+
+def _ts():
+    return time.strftime("%H:%M:%S")
 
 
 ZWSP = "\u200b"  # U+200B zero-width space, explicit escape
@@ -57,13 +62,15 @@ def listen(url, hook_filter="", raw=False, pipe=False, on_message=None,
     v2 thread tag dict, or None for untagged stock messages). `thread`
     selects which thread flows (see thread_match)."""
     ws = websocket.create_connection(url, timeout=None)
-    print(f"hook: connected to {url}", flush=True)
+    print(f"hook [{_ts()}] connected to {url}", flush=True)
     last = ("", "")
     while True:
         try:
             msg = ws.recv()
         except Exception as e:
-            print(f"hook: connection closed: {e}", flush=True)
+            # Timestamped: drop timing is the first clue when diagnosing
+            # silent textboxes (transport flap vs no sentences).
+            print(f"hook [{_ts()}] connection closed: {e}", flush=True)
             return
         if raw:
             print(f"RAW: {msg}", flush=True)

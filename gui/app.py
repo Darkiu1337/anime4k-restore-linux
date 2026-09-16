@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QHBoxLayout, QPushButton, QLabel, QTextEdit, QSplitter,
     QDialog, QDialogButtonBox, QFormLayout, QComboBox, QLineEdit, QSpinBox,
     QCheckBox, QFileDialog, QMessageBox, QWizard, QWizardPage, QButtonGroup,
-    QRadioButton, QMenu,
+    QRadioButton,
 )
 
 APP_DIR = os.path.dirname(os.path.realpath(__file__))
@@ -635,6 +635,23 @@ def translate_bridge_ok():
         return False
 
 
+TEXTBOX_PROG = "textbox.py"
+
+
+def _textbox_pattern():
+    return r"[t]extbox\.py --start-workers"
+
+
+def textbox_pids():
+    """PIDs of a running textbox backend (workers = owns the translator)."""
+    try:
+        out = subprocess.run(["pgrep", "-f", _textbox_pattern()],
+                             capture_output=True, text=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [p for p in (x.strip() for x in out.splitlines()) if p]
+
+
 def translate_wedge_pids(game_base=""):
     """PIDs of wedged translate containers: umu-run ... hook .vbs older than
     ~3 min while no game/hooker process lives and the bridge is down.
@@ -739,7 +756,7 @@ class MainWindow(QMainWindow):
         self.tr_pick_btn.clicked.connect(self.pick_thread)
         self.textbox_btn = QPushButton("Textbox")
         self.textbox_btn.setToolTip("Open the translation readout window")
-        self.textbox_btn.clicked.connect(self.open_textbox)
+        self.textbox_btn.clicked.connect(lambda: self.open_textbox())
         self.stop_btn = QPushButton("Stop")
         self.stop_btn.setEnabled(False)
         self.stop_btn.clicked.connect(self.stop_game)
@@ -1176,7 +1193,7 @@ class MainWindow(QMainWindow):
 
     def open_textbox(self):
         import subprocess as _sp
-        argv = [os.path.join(TRANSLATE_DIR, "textbox.py"), "--start-workers"]
+        argv = [os.path.join(TRANSLATE_DIR, TEXTBOX_PROG), "--start-workers"]
         try:
             game = load_games().get(self.selected_id() or "")
             thread = ((game or {}).get("translate") or {}).get("thread", "").strip()
@@ -1184,18 +1201,16 @@ class MainWindow(QMainWindow):
                 argv += ["--thread", thread]
         except Exception:
             pass
-        # Single instance: two textboxes = two translators fighting over one
+        # Single instance: two backends = two translators fighting over one
         # DeepL page (and doubled bridge clients). Focus nothing — just refuse.
         try:
-            out = subprocess.run(["pgrep", "-f", "[t]extbox.py --start-workers"],
-                                 capture_output=True, text=True, timeout=10).stdout
-            if out.strip():
+            if textbox_pids():
                 self.log_view.append("textbox: already running (one instance only).")
                 return
-        except (OSError, subprocess.SubprocessError):
+        except Exception:
             pass
         # Keep stderr: fatal tracebacks used to vanish into DEVNULL, which is
-        # how a rendering bug shipped invisible (see translate.md self-test).
+        # how rendering bugs shipped invisible (see translate.md self-test).
         try:
             logdir = os.path.expanduser("~/.cache/anime4k")
             os.makedirs(logdir, exist_ok=True)
@@ -1206,8 +1221,11 @@ class MainWindow(QMainWindow):
             _sp.Popen(argv, stdout=logf, stderr=logf,
                       stdin=_sp.DEVNULL, start_new_session=True)
             self.log_view.append("textbox: started (stderr -> ~/.cache/anime4k/textbox.log)")
-        except (OSError, _sp.SubprocessError):
-            QMessageBox.warning(self, "Textbox", "Could not open the translation window.")
+        except (OSError, _sp.SubprocessError) as e:
+            # Log the real reason (e.g. missing exec bit): the generic
+            # warning alone once hid a Permission denied.
+            self.log_view.append(f"textbox: could not open ({e})")
+            QMessageBox.warning(self, "Textbox", f"Could not open the translation window:\n{e}")
 
     def poll_translate_status(self):
         try:

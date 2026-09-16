@@ -542,6 +542,7 @@ if [ "$SYMLINK" = "1" ]; then
   if [ -d "$ROOT/translate" ]; then
     ln -sf "$ROOT/translate/vn-launch.sh" "$HOME/.local/bin/vn-launch"
     ln -sf "$ROOT/translate/textbox.py" "$HOME/.local/bin/vn-textbox"
+    rm -f "$HOME/.local/bin/vn-textbox-qml"
     echo "symlinked: vn-launch, vn-textbox -> ~/.local/bin/ (translation)"
   fi
   case ":$PATH:" in
