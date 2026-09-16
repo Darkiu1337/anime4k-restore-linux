@@ -3,6 +3,7 @@ import os
 import shutil
 
 from . import paths
+from .library import slugify
 
 
 def load_json(path, default):

@@ -622,6 +622,20 @@ def self_test(backend, model, theme, window, warnings, qml_errors=None):
     assert model.rowCount() == len(store.load_games()), "model must mirror the library"
     assert qml_errors is not None and not qml_errors, \
         f"runtime QML errors: {qml_errors[:3]}"
+    import tempfile
+    _orig = paths.GAMES_JSON
+    paths.GAMES_JSON = os.path.join(tempfile.mkdtemp(), "games.json")
+    try:
+        assert store.load_games() == {}
+        gid = store.new_game(store.load_games(),
+                             {"name": "Unit Test", "runner": "native",
+                              "path": "/bin/true"})
+        assert gid == "unit-test", f"new_game id: {gid}"
+        assert "unit-test" in store.load_games(), "new_game must persist"
+        store.remove_game(gid)
+        assert store.load_games() == {}, "remove_game must persist"
+    finally:
+        paths.GAMES_JSON = _orig
     assert backend.previewCommand("__no_such_game__") == ""
     assert backend.validateGame("not json") != ""
     assert backend.validateGame(json.dumps({"name": "x", "runner": "proton", "path": "/nope"})) != ""

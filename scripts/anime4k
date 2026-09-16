@@ -13,6 +13,11 @@ unset _SRC
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/anime4k-lib.sh"
 LIB="$HOME/.config/anime4k/games.json"
+ANIME4K_REPO="$(dirname "$SCRIPT_DIR")"
+
+# Write/launch paths run through the shared core (one store, backups,
+# validation) — see core/__main__.py.
+core_cmd() { env PYTHONPATH="$ANIME4K_REPO" python3 -m core "$@"; }
 
 need() { command -v "$1" >/dev/null 2>&1 || { echo "error: '$1' not found" >&2; exit 1; }; }
 need gum
@@ -25,23 +30,18 @@ lib_init() {
   jq -e '.games' "$LIB" >/dev/null 2>&1 || echo '{"games":{}}' > "$LIB"
 }
 
-lib_ids() { jq -r '.games | keys[]' "$LIB" 2>/dev/null; }
 lib_get() { jq -r --arg id "$2" --arg f "$1" '.games[$id][$f] // empty' "$LIB" 2>/dev/null; }
 lib_names() {
   # "id — name (runner, variant)" lines for pickers; echoes id after selection
   jq -r '.games | to_entries[] | "\(.key)\t\(.value.name) (\(.value.runner), \(.value.variant)\(if .value.translate.enabled == "1" then ", +translate" else "" end))"' "$LIB" 2>/dev/null
 }
 
-# Real Vulkan device names from the loader (plus "auto" = discrete GPU when
-# detectable, else loader default). Full lines preserved (names contain
-# spaces) — consume with `gum filter`, never `gum choose`.
-gpu_list() {
-  echo "auto (discrete GPU preferred)"
-  vulkaninfo --summary 2>/dev/null | grep -i "deviceName" | sed 's/.*deviceName.*= //' | sort -u
-}
+# Real Vulkan device names (plus "auto"), from the shared core. Names may
+# contain spaces — consume with `gum filter`, never `gum choose`.
+gpu_list() { core_cmd gpus; }
 
 cmd_add() {
-  local runner name path variant gpu fps hud id
+  local runner name path variant gpu fps hud
   runner="$(gum choose --header "Runner (limits shown)" \
     "proton — Windows games: D3D9-12/Vulkan get filtered, OpenGL titles run unfiltered" \
     "rpgmaker — RPGMaker dirs: MV/MZ get filtered, other engines redirect" \
@@ -126,19 +126,17 @@ cmd_add() {
   fi
   name="$(gum input --header "Display name" --placeholder "$(basename "$path")")"
   name="${name:-$(basename "$path")}"
-  id="$(printf '%s' "$name" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//')"
   if [ "$runner" = "proton" ]; then
     if [ -e "$path" ] && [ -d "$(dirname "$path")/renpy" ]; then
       echo "note: Ren'Py title detected — ANGLE renderer will be forced automatically."
     fi
   fi
-  jq --arg id "$id" --arg name "$name" --arg runner "$runner" --arg path "$path" \
-     --arg variant "$variant" --arg gpu "$gpu" --arg fps "$fps" --arg hud "$hud" \
-     --arg pmode "$pmode" --arg lang "$lang" \
-     --arg tr_enabled "$tr_enabled" --arg tr_hook "$tr_hook" \
-     '.games[$id] = {name:$name, runner:$runner, path:$path, variant:$variant, gpu:$gpu, fps:$fps, hud:$hud, prefix_mode:$pmode, lang:$lang, translate:{enabled:$tr_enabled, hook_code:$tr_hook, hook_mode:"unknown"}}' \
-     "$LIB" > "$LIB.tmp" && mv "$LIB.tmp" "$LIB"
-  echo "added '$name' as id '$id'."
+  local new_id
+  new_id="$(core_cmd add --name "$name" --runner "$runner" --path "$path" \
+    --variant "$variant" --gpu "$gpu" --fps "$fps" --hud "$hud" \
+    --prefix-mode "$pmode" --lang "$lang" \
+    --tr-enabled "$tr_enabled" --tr-hook "$tr_hook")"
+  echo "added '$name' as id '$new_id'."
 }
 
 cmd_list() {
@@ -159,7 +157,7 @@ cmd_launch() {
   local id="${1:-}"
   [ -n "$id" ] || id="$(pick_game)"
   jq -e ".games[\"$id\"]" "$LIB" >/dev/null || { echo "error: unknown game id '$id'" >&2; exit 1; }
-  exec env PYTHONPATH="$(dirname "$SCRIPT_DIR")" python3 -m core launch "$id"
+  exec env PYTHONPATH="$ANIME4K_REPO" python3 -m core launch "$id"
 }
 
 cmd_remove() {
@@ -167,7 +165,7 @@ cmd_remove() {
   [ -n "$id" ] || id="$(pick_game)"
   jq -e ".games[\"$id\"]" "$LIB" >/dev/null || { echo "error: unknown game id '$id'" >&2; exit 1; }
   gum confirm "Remove '$(lib_get name "$id")' from the library?" || exit 0
-  jq "del(.games[\"$id\"])" "$LIB" > "$LIB.tmp" && mv "$LIB.tmp" "$LIB"
+  core_cmd remove "$id"
   echo "removed '$id'."
 }
 
@@ -203,13 +201,13 @@ cmd_edit() {
       ;;
     translate)
       gum confirm "Translate Japanese dialogue via DeepL?" && new="1" || new="0"
-      jq --arg id "$id" --arg v "$new" '.games[$id].translate.enabled = $v' "$LIB" > "$LIB.tmp" && mv "$LIB.tmp" "$LIB"
+      core_cmd tset "$id" enabled "$new"
       echo "updated '$id': translate.enabled = $new"
       return 0
       ;;
     translate_hook)
       new="$(gum input --header "Hook code (empty = auto-detect at setup)" --value "$(jq -r --arg id "$id" '.games[$id].translate.hook_code // empty' "$LIB")")"
-      jq --arg id "$id" --arg v "$new" '.games[$id].translate.hook_code = $v' "$LIB" > "$LIB.tmp" && mv "$LIB.tmp" "$LIB"
+      core_cmd tset "$id" hook_code "$new"
       echo "updated '$id': translate.hook_code = ${new:-<auto-detect>}"
       return 0
       ;;
@@ -217,7 +215,7 @@ cmd_edit() {
       cur="$(jq -r --arg id "$id" '.games[$id].translate.thread // "*"' "$LIB")"
       new="$(gum input --header "Thread name/number for the textbox (empty or * = follow Textractor's selection)" --value "$cur")"
       new="${new:-*}"
-      jq --arg id "$id" --arg v "$new" '.games[$id].translate.thread = $v' "$LIB" > "$LIB.tmp" && mv "$LIB.tmp" "$LIB"
+      core_cmd tset "$id" thread "$new"
       echo "updated '$id': translate.thread = $new"
       return 0
       ;;
@@ -225,7 +223,7 @@ cmd_edit() {
   if [ "$field" != "lang" ] && [ -z "$new" ]; then
     exit 0
   fi
-  jq --arg id "$id" --arg f "$field" --arg v "$new" '.games[$id][$f] = $v' "$LIB" > "$LIB.tmp" && mv "$LIB.tmp" "$LIB"
+  core_cmd set "$id" "$field" "$new"
   echo "updated '$id': $field = ${new:-<system default>}"
 }
 
