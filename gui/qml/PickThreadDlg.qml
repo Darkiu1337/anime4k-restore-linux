@@ -14,14 +14,25 @@ Dialog {
     property string gid: ""
     property var threads: []
     property bool sampling: false
+    property int waited: 0
 
-    function start(gid) {
+    // waitForBridge: keep retrying until the game/bridge comes up (used by
+    // Setup, which launches the game just before opening this).
+    function start(gid, waitForBridge) {
         root.gid = gid
         root.threads = []
+        root.waited = 0
+        root.open()
         var r = backend.pickThread(gid)
         if (r === "nobridge") {
-            statusLabel.text = "No live translation session (bridge :6677 silent).\nLaunch Setup first so threads start flowing."
-            root.sampling = false
+            if (waitForBridge) {
+                statusLabel.text = "Waiting for the game and the text bridge…"
+                root.sampling = false
+                bridgeWait.restart()
+            } else {
+                statusLabel.text = "No live translation session (bridge :6677 silent).\nLaunch Setup Text Hooker for translation first."
+                root.sampling = false
+            }
         } else if (r !== "") {
             statusLabel.text = r
             root.sampling = false
@@ -29,8 +40,34 @@ Dialog {
             statusLabel.text = "Sampling threads… (advance the game text)"
             root.sampling = true
         }
-        root.open()
     }
+
+    Timer {
+        id: bridgeWait
+        interval: 2000
+        repeat: true
+        onTriggered: {
+            root.waited += interval / 1000
+            if (root.waited > 90) {
+                stop()
+                statusLabel.text = "Still no text bridge after 90s.\n"
+                    + "Is the game running with text advancing?"
+                return
+            }
+            var r = backend.pickThread(root.gid)
+            if (r === "") {
+                stop()
+                statusLabel.text = "Sampling threads… (advance the game text)"
+                root.sampling = true
+            } else if (r !== "nobridge") {
+                stop()
+                statusLabel.text = r
+                root.sampling = false
+            }
+        }
+    }
+
+    onClosed: bridgeWait.stop()
 
     Connections {
         target: backend
@@ -69,6 +106,7 @@ Dialog {
 
         Label {
             id: statusLabel
+            objectName: "threadStatus"
             wrapMode: Text.Wrap
             Layout.fillWidth: true
         }

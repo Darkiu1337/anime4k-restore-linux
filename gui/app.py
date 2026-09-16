@@ -121,6 +121,7 @@ class GuiBackend(QObject):
     prompt = Signal(str, str, str)
     threadResults = Signal(str)
     gamesChanged = Signal()
+    setupLaunched = Signal(str)
 
     def __init__(self, model, parent=None):
         super().__init__(parent)
@@ -363,10 +364,10 @@ class GuiBackend(QObject):
             return "Enable translation for this game first (Edit…)."
         if not setup and not (game.get("translate", {}).get("hook_code") or "").strip():
             self._pending = ("translate", gid, True)
-            self.emit_prompt("No hook recorded",
-                             "No hook code is recorded for this game yet.\n"
-                             "Launch Setup (Textractor visible) to pick the text hook?",
-                             ["Launch Setup…", "Cancel"])
+            self.emit_prompt("No text hook recorded",
+                             "No text hook is recorded for this game yet.\n"
+                             "Run Setup Text Hooker for translation to pick one?",
+                             ["Setup Text Hooker…", "Cancel"])
             return "pending"
         if not os.path.exists(game.get("path", "")):
             return f"Path no longer exists:\n{game['path']}"
@@ -401,7 +402,7 @@ class GuiBackend(QObject):
         env = QProcessEnvironment.systemEnvironment()
         stamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.logCleared.emit()
-        mode = "setup (pick the text hook in Textractor)" if setup else "filtered + translation"
+        mode = "setup (pick the text hook)" if setup else "filtered + translation"
         self.logAppended.emit(f"[{stamp}] {game.get('name', gid)} — {mode}")
         self.logAppended.emit(f"$ {' '.join(argv)}\n")
         self.proc = QProcess(self)
@@ -420,6 +421,9 @@ class GuiBackend(QObject):
         self._running_gid = gid
         self._running_translate = True
         self.openTextbox(gid)
+        if setup:
+            # Let the picker attach once the bridge is up.
+            self.setupLaunched.emit(gid)
         return ""
 
     @Slot(int)
@@ -463,7 +467,7 @@ class GuiBackend(QObject):
                 self._set_status("Clearing wedged session…")
                 process.stop_session(game["path"])
                 self.logAppended.emit("cleared.")
-            elif self._last_prompt_title == "No hook recorded":
+            elif self._last_prompt_title == "No text hook recorded":
                 if btn != 0:
                     return
                 extra = True

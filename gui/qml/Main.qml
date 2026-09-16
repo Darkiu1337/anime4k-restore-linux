@@ -163,18 +163,13 @@ ApplicationWindow {
                     }
                 }
                 Btn {
-                    text: "Setup…"
+                    text: "Setup Text Hooker for translation"
                     enabled: root.gid !== "" && !backend.running
                     onClicked: {
                         var r = backend.translateGame(root.gid, true)
                         if (r !== "" && r !== "pending")
                             err(r)
                     }
-                }
-                Btn {
-                    text: "Pick Text Hooker…"
-                    enabled: root.gid !== ""
-                    onClicked: pickThreadDlg.start(root.gid)
                 }
                 Btn {
                     text: "Textbox"
@@ -237,6 +232,7 @@ ApplicationWindow {
         function onLogCleared() { logView.clear() }
         function onPrompt(title, text, buttons) { promptDlg.ask(title, text, JSON.parse(buttons)) }
         function onGamesChanged() { root.ensureSelection() }
+        function onSetupLaunched(gid) { pickThreadDlg.start(gid, true) }
     }
 
     Connections {

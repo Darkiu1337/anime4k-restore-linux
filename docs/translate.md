@@ -8,17 +8,20 @@ Luna-style textbox — composed with the Restore filter in a single launch.
 
 1. **Enable** per game: GUI game wizard/edit (Translation page) or
    `anime4k edit` → `translate`. Proton/Windows games only.
-2. **First run (Setup)**: `Setup…` in the GUI (or `anime4k` launch, which
-   auto-uses setup while no hook is recorded). Textractor opens **already
-   attached** to the game with the saved-thread list loaded, and the textbox
+2. **First run (Setup Text Hooker for translation)**: this GUI button (or
+   `anime4k` launch, which auto-uses setup while no hook is recorded)
+   launches the game and opens the Text Hooker picker. Textractor opens
+   **already attached** with the saved-thread list loaded, and the textbox
    opens alongside following Textractor's selection — so you see live
-   translation while picking. Advance the game text, then either:
+   translation while picking. The picker waits for the bridge to come up
+   (the game must be running), then samples 20s of live threads. Advance the
+   game text, then either:
+   - click the story thread in the picker (name + last line) — no Textractor
+     interaction at all — or
    - click the story thread in Textractor and press **Save hook(s)** — the
      hook code is harvested into the game entry automatically at session
-     end (nothing is copied by hand), or
-   - use **Pick Text Hooker…** in the GUI: it samples every live thread from
-     the bridge (name + last line) and you click the story thread — no
-     Textractor interaction at all.
+     end (nothing is copied by hand).
+   Either way the chosen thread/hook is stored in the game entry.
 3. **Daily play**: `Translate` (Textractor hidden — the only difference from
    Setup; the recorded hook auto-inserts all the same). The textbox opens
    with it, following the recorded thread. It toggles EN-only / JA+EN. The
@@ -47,8 +50,9 @@ untranslated by design.
 ## Thread picking without Textractor
 
 The v2 bridge tags every sentence with thread number, hook address, and
-hook name (stable across sessions). `Pick Text Hooker…` samples 20s of live
-traffic and lists candidates with their last line; choosing one stores it
+hook name (stable across sessions). The Text Hooker picker (opened by Setup
+Text Hooker for translation, waiting for the bridge first) samples 20s of
+live traffic and lists candidates with their last line; choosing one stores it
 as the game's `translate.thread` and the Textbox/hook_client then follow
 that thread by name (falling back to Textractor's selection if unset —
 stock-bridge installs simply keep following the selection). Manual control:
@@ -190,7 +194,8 @@ distro. `install.sh --check-only` audits the translate deps too.
 
 * Proton/Windows games only (hook injection needs Wine + one shared session).
 * One live session at a time (shared prefix design).
-* The Text Hooker needs live text: advance the game while sampling
+* The Text Hooker needs live text: run Setup Text Hooker for translation,
+  then advance the game while it samples
   (the dialog says so); thread picking by name needs the v2 bridge —
   stock installs follow Textractor's selection instead.
 * Sentence-MT quirks: speaker names romanize inconsistently across lines.
