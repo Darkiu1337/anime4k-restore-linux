@@ -83,10 +83,8 @@ BASE="$(basename "$EXE")"
 BASE_NOEXT="${BASE%.exe}"; BASE_NOEXT="${BASE_NOEXT%.EXE}"
 
 stop_session() { # stop_session <label>: kill game exes, wscript, stale wineserver
-  # Match the Wine-side argv form (X:\dir\game.exe): the launcher's own argv
-  # carries the unix path, so a plain basename pattern suicides (it matches
-  # this script's --stop-exe/--exe argument and the caller's shell). A
-  # backslash-anchored pattern can never match a unix argv.
+  # Match the Wine-side argv form (X:\dir\game.exe); a backslash-anchored
+  # pattern can never match a unix path, so it cannot kill our own shell.
   local label="$1"
   local esc="${BASE//./\\.}" pat1
   pat1="[\\\\]${esc:1}"
@@ -96,9 +94,7 @@ stop_session() { # stop_session <label>: kill game exes, wscript, stale wineserv
   pkill -f "[w]script.exe C" 2>/dev/null || true
   sleep 5
   if pgrep -f "$pat1" >/dev/null 2>&1; then echo "stop: processes remain"; exit 1; fi
-  # Drop any lingering wineserver so the next launch boots a fresh Wine
-  # session (a stale server from a killed session wedges new containers:
-  # wscript exits silently, nothing spawns).
+  # Drop lingering wineserver or the next launch wedges (docs/translate.md).
   _P="$HOME/.local/share/Steam/compatibilitytools.d/Proton-CachyOS Latest"
   if [ -x "$_P/files/bin/wineserver" ]; then
     WINEPREFIX="$PREFIX" "$_P/files/bin/wineserver" -k 2>/dev/null || true
@@ -116,11 +112,8 @@ fi
 # --- launch ---
 [ -f "$EXE" ] || { echo "game not found: $EXE" >&2; exit 1; }
 mkdir -p "$PREFIX/drive_c/hook"
-seed_saved_hooks() { # <wine-exe-path> <hook-code>: make Textractor auto-attach
-  # and auto-insert the recorded hook (upstream SavedHooks.txt format:
-  # "path , code"; last matching line wins; saved codes auto-insert on
-  # connect, see Artikash/Textractor GUI/mainwindow.cpp). Never clobbers a
-  # richer user-saved line (Save hook(s) in Textractor wins over the registry).
+seed_saved_hooks() { # <wine-exe-path> <hook-code>: Textractor auto-attach
+  # Seeded lines never clobber a richer user-saved hook (docs/translate.md).
   local vexe="$1" code="$2" tdir="$PREFIX/drive_c/Textractor/x86"
   [ -d "$tdir" ] || return 0
   python3 - "$tdir" "$vexe" "$code" <<'PYEOF'
@@ -133,8 +126,7 @@ def raw(name):
     except OSError:
         return ""
 def load(name):
-    # Normalize CRLF->LF: upstream exact-matches these lines against
-    # process paths, so a stray \r silently disables auto-attach.
+    # CRLF->LF: upstream exact-matches these lines (docs/translate.md).
     return [l.strip() for l in raw(name).splitlines() if l.strip()]
 hooks, games = load("SavedHooks.txt"), load("SavedGames.txt")
 have_rich = any((l.split(" , ")[0] == vexe and " , " in l) for l in hooks)
@@ -154,8 +146,7 @@ if new_games != raw("SavedGames.txt"):
         f.write(new_games)
 PYEOF
 }
-# Render per-game VBS from template. Hooker hidden (0) in play mode,
-# visible (1) in setup mode. Game always normal (1).
+# Hooker hidden in play mode, visible in setup; game always normal.
 if [ "$SETUP" = "1" ]; then HSTYLE=1; MODE="setup (Textractor visible)"; else HSTYLE=0; MODE="play (Textractor hidden)"; fi
 GDIR="$(dirname "$EXE")"
 to_winpath() { python3 -c "
@@ -208,6 +199,5 @@ if [ "$DRYRUN" = "1" ]; then
 fi
 echo "launching $GAME [$MODE] (end session with Ctrl-C)…"
 set -x
-# exec: the launcher process BECOMES umu-run, so a supervisor's terminate/kill
-# ends the container (no orphaned wineserver). Required by anime4k-gui Stop.
+# exec so the GUI's Stop terminates the container (no orphaned wineserver).
 exec "$UMU" "$PREFIX/drive_c/windows/system32/wscript.exe" "C:\\hook\\$GAME.vbs"

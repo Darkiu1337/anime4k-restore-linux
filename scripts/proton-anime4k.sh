@@ -80,10 +80,8 @@ case "$EXE" in
   *.exe|*.EXE) ;;
   *) ak_log "warning: '$EXE' does not look like a Windows executable, continuing anyway" ;;
 esac
-# Steam parity: run with the game's own directory as cwd. Titles that load
-# data via relative paths (proven: YaneuraoGameSDK3rd shows a fatal
-# "system data" dialog otherwise) need this; absolute-path titles are
-# unaffected. Resolve relative CLI paths before changing directory.
+# Steam parity: game dir as cwd (relative-path titles need it) — resolve
+# relative CLI paths before changing directory.
 case "$EXE" in
   /*) : ;;
   *) EXE="$PWD/$EXE" ;;
@@ -101,8 +99,7 @@ if [ -z "$GAMEID" ]; then
   [ -n "$GAMEID" ] || GAMEID="game"
 fi
 
-# Prefix resolution: explicit flag > config file > mode default.
-# Shared default keeps one prefix for everything; per-game isolates.
+# Prefix: explicit flag > config > mode default (shared keeps one for all).
 if [ -n "$PREFIX_FLAG" ]; then
   PREFIX="$PREFIX_FLAG"
 elif [ -n "$(ak_config_get prefix "")" ]; then
@@ -127,19 +124,14 @@ fi
 export WINEPREFIX="$PREFIX"
 [ -n "$PROTON" ] && export PROTONPATH="$PROTON"
 export GAMEID
-# Ren'Py Windows titles default to desktop OpenGL (vkBasalt cannot hook that);
-# force the ANGLE (DirectX) renderer so the game goes through DXVK -> Vulkan.
-# Pre-set RENPY_RENDERER to override.
+# Ren'Py: force ANGLE (DirectX) so it lands on DXVK (docs/limits.md);
+# pre-set RENPY_RENDERER to override.
 if [ -z "${RENPY_RENDERER:-}" ] && [ -d "$(dirname "$EXE")/renpy" ]; then
   export RENPY_RENDERER="angle2"
   ak_log "Ren'Py game detected: forcing ANGLE renderer (RENPY_RENDERER=angle2)"
 fi
 [ -n "$VKD3D_DEV" ] && export VKD3D_VULKAN_DEVICE="$VKD3D_DEV"
-# DXVK device default: the discrete GPU when one is detectable, so a fresh
-# box behaves like the tuned setup (game+filter on the strong GPU) instead
-# of the loader default (often the iGPU, where some titles pick a
-# non-Vulkan renderer and launch silently unfiltered). Explicit flag wins,
-# then an inherited env, then auto-detect; --dxvk-device auto = loader default.
+# Device: flag > inherited env > discrete GPU > loader default (docs/limits.md).
 if [ -n "$DXVK_DEV" ]; then
   if [ "$DXVK_DEV" = "auto" ]; then
     unset DXVK_FILTER_DEVICE_NAME
@@ -184,9 +176,7 @@ if [ "$DRYRUN" = "1" ]; then
   exit 0
 fi
 
-# Relaunch means takeover: clear any surviving processes of this same game
-# (stale Chromium/Wine trees otherwise hijack the new launch, e.g. keeping
-# a previous run's filter state). Skipped for --dry-run (see above).
+# Takeover: clear surviving processes of this game before relaunch.
 _ak_base="$(basename "$EXE")"
 _ak_base="${_ak_base%.exe}"
 _ak_base="${_ak_base%.EXE}"

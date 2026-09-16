@@ -107,11 +107,10 @@ cleanup() { ak_template_restore; }
 trap cleanup EXIT INT TERM
 ak_template_patch
 
-# stale Chromium singleton locks (from killed runs) break startup; clear them
+# Stale Chromium singleton locks (from killed runs) break startup; clear them.
 rm -f "$HOME/.config/RPG Maker MV/MZ (cicpoffs mount)/Singleton"* 2>/dev/null || true
 
-# X11 ozone + selectable Vulkan device (proven: NVIDIA carries game+filter,
-# leaving the iGPU idle; amd/auto kept as fallback).
+# X11 ozone + Vulkan device for game+filter.
 export XDG_SESSION_TYPE=x11
 case "${GPU:-nvidia}" in
   nvidia) export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json ;;
@@ -135,9 +134,8 @@ if [ "$DRYRUN" = "1" ]; then
 fi
 
 set -x
-# NOTE: no `exec` on purpose so the EXIT trap restores the template.
-# Relaunch means takeover: clear surviving NW.js runtimes first, or a stale
-# (possibly filtered) process would hijack this launch via single-instance.
+# No exec (EXIT trap restores the template); clear stale NW.js runtimes first
+# or a single-instance stale process would hijack this launch.
 ak_kill_strays "nw --ozone-platform"
 "${CMD[@]}"
 status=$?

@@ -288,12 +288,6 @@ ak_template_restore() {
   fi
 }
 
-ak_template_pristine() {
-  local tpl
-  tpl="$(ak_template_path)"
-  python3 -c "import json,sys; sys.exit(0 if '--use-angle' not in json.load(open('$tpl'))['chromium-args'] else 1)" 2>/dev/null
-}
-
 # MangoHud fps limit (+optional overlay) for runners without a DXVK cap.
 # FPS: number or off. HUD: 1 = show overlay, 0 = limit silently (no_display).
 ak_mangohud_env() {
