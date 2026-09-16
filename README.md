@@ -13,7 +13,7 @@ Five Restore variants ship: **S, M, L, Soft_S, Soft_L**
 This is a toy project 100% vibecoded with Muse Spark 1.3 free, made for
 personal use first.
 
-## Gallery (Restore L, 1080p)
+## Gallery (Restore L, 1080p), It is easier to notice when actually using.
 
 | Daily Lives of My Countryside (RPGMaker) | |
 |---|---|
