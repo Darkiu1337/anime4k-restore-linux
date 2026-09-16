@@ -207,6 +207,9 @@ install_pkg() {
 
 missing=0
 while IFS=: read -r tool pkgs; do
+  # Strip whitespace: the herestring below left-pads the first row, and
+  # `command -v " python3"` misses while everything else probes clean.
+  tool="${tool//[[:space:]]/}"
   [ -z "$tool" ] && continue
   if command -v "$tool" >/dev/null 2>&1; then
     echo "ok: $tool"
