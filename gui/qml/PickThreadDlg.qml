@@ -4,7 +4,7 @@ import QtQuick.Layouts
 
 Dialog {
     id: root
-    title: "Pick thread"
+    title: "Pick Text Hooker"
     modal: true
     width: Math.min(560, root.parent ? root.parent.width - 48 : 560)
     height: Math.min(460, root.parent ? root.parent.height - 48 : 460)
@@ -52,7 +52,7 @@ Dialog {
                        last: "Follow Textractor's own selection (*)", current: false,
                        follow: true})
             root.threads = rows
-            statusLabel.text = data.threads.length + " threads — pick the story thread:"
+            statusLabel.text = data.threads.length + " threads — pick the text hook:"
         }
     }
 

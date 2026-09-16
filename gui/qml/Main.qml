@@ -172,7 +172,7 @@ ApplicationWindow {
                     }
                 }
                 Btn {
-                    text: "Pick thread…"
+                    text: "Pick Text Hooker…"
                     enabled: root.gid !== ""
                     onClicked: pickThreadDlg.start(root.gid)
                 }

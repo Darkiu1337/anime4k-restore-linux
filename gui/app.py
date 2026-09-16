@@ -364,7 +364,7 @@ class GuiBackend(QObject):
             self._pending = ("translate", gid, True)
             self.emit_prompt("No hook recorded",
                              "No hook code is recorded for this game yet.\n"
-                             "Launch Setup (Textractor visible) to pick the story thread?",
+                             "Launch Setup (Textractor visible) to pick the text hook?",
                              ["Launch Setup…", "Cancel"])
             return "pending"
         if not os.path.exists(game.get("path", "")):
@@ -400,7 +400,7 @@ class GuiBackend(QObject):
         env = QProcessEnvironment.systemEnvironment()
         stamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.logCleared.emit()
-        mode = "setup (pick the story thread in Textractor)" if setup else "filtered + translation"
+        mode = "setup (pick the text hook in Textractor)" if setup else "filtered + translation"
         self.logAppended.emit(f"[{stamp}] {game.get('name', gid)} — {mode}")
         self.logAppended.emit(f"$ {' '.join(argv)}\n")
         self.proc = QProcess(self)

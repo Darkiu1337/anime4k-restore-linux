@@ -16,7 +16,7 @@ Luna-style textbox — composed with the Restore filter in a single launch.
    - click the story thread in Textractor and press **Save hook(s)** — the
      hook code is harvested into the game entry automatically at session
      end (nothing is copied by hand), or
-   - use **Pick thread…** in the GUI: it samples every live thread from
+   - use **Pick Text Hooker…** in the GUI: it samples every live thread from
      the bridge (name + last line) and you click the story thread — no
      Textractor interaction at all.
 3. **Daily play**: `Translate` (Textractor hidden — the only difference from
@@ -47,7 +47,7 @@ untranslated by design.
 ## Thread picking without Textractor
 
 The v2 bridge tags every sentence with thread number, hook address, and
-hook name (stable across sessions). `Pick thread…` samples 20s of live
+hook name (stable across sessions). `Pick Text Hooker…` samples 20s of live
 traffic and lists candidates with their last line; choosing one stores it
 as the game's `translate.thread` and the Textbox/hook_client then follow
 that thread by name (falling back to Textractor's selection if unset —
@@ -190,7 +190,7 @@ distro. `install.sh --check-only` audits the translate deps too.
 
 * Proton/Windows games only (hook injection needs Wine + one shared session).
 * One live session at a time (shared prefix design).
-* The v2 thread picker needs live text: advance the game while sampling
+* The Text Hooker needs live text: advance the game while sampling
   (the dialog says so); thread picking by name needs the v2 bridge —
   stock installs follow Textractor's selection instead.
 * Sentence-MT quirks: speaker names romanize inconsistently across lines.

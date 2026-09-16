@@ -339,7 +339,7 @@ Dialog {
                             placeholderText: "hook code, e.g. HSX10@54DC0:game.exe (optional)"
                         }
                         Label {
-                            text: "Proton/Windows games only. Filter and translation compose in one launch. First run: enable, launch with Translate, pick the story thread in Textractor (Setup shows its window), paste its code here."
+                            text: "Proton/Windows games only. Filter and translation compose in one launch. First run: enable, launch with Translate, pick the text hook in Textractor (Setup shows its window), paste its code here."
                             opacity: 0.7
                             wrapMode: Text.Wrap
                             Layout.fillWidth: true
