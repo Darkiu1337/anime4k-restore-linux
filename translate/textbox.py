@@ -1086,6 +1086,23 @@ def self_test(backend, window):
             "Top enable must clear home for re-adoption"
     finally:
         backend._hyprctl_json, subprocess.run = _real_json, _real_run
+    # Session purge: only ever touches an isolated automation profile.
+    import tempfile
+    _cp = core_process
+    tmp = tempfile.mkdtemp()
+    prof = os.path.join(tmp, "brave-cdp-profile")
+    os.makedirs(os.path.join(prof, "Default", "Sessions"))
+    for name in ("Current Session", "Current Tabs", "Last Session", "Last Tabs"):
+        open(os.path.join(prof, "Default", name), "w").close()
+    assert _cp.is_safe_automation_profile(prof), "isolated profile must be allowed"
+    assert not _cp.is_safe_automation_profile(
+        "~/.config/BraveSoftware/Brave-Browser/Default"), "real profile must be refused"
+    assert _cp.purge_browser_session(prof) is True, "purge must remove session state"
+    assert not os.path.exists(os.path.join(prof, "Default", "Current Session"))
+    assert not os.path.exists(os.path.join(prof, "Default", "Sessions"))
+    assert _cp.purge_browser_session(
+        "~/.config/BraveSoftware/Brave-Browser/Default") is False, \
+        "purge must refuse a real profile"
     print("self-test: ALL OK")
 
 
@@ -1099,6 +1116,9 @@ def main():
     engine = QQmlApplicationEngine()
     qml_errors = []
     engine.warnings.connect(lambda w: qml_errors.extend(w))
+    # Closing the readout ends the session: shut the DeepL browser down
+    # cleanly (tabs closed, no session restore) so nothing lingers.
+    app.aboutToQuit.connect(core_process.close_translator_browser)
     backend = Backend(app)
     args = sys.argv[1:]
     if "--thread" in args and args.index("--thread") + 1 < len(args):

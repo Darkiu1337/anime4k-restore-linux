@@ -126,6 +126,15 @@ game; both Translate and Setup Text Hooker honour it). Globally, set
 single-instance and reused while its debug port is live, so stop the session
 before a visibility change takes effect.
 
+It keeps exactly **one** DeepL tab: the launcher reuses an existing tab,
+closes any extras, and purges stale session state before a fresh start, so a
+new session never reopens a pile of DeepL pages. On Stop — and when the
+textbox window closes — the browser closes its tabs and exits cleanly
+(`Browser.close`) instead of being killed, so it never session-restores.
+Both the purge and the close are guarded to the isolated automation profile:
+a browser that wasn't started with that `--user-data-dir` is never touched,
+and the real browser profile is never read or modified.
+
 ## Textbox on Hyprland (Float + Click + Top)
 
 * **Click** = click-through. Clicks on the text area fall through to the game

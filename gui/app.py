@@ -508,6 +508,10 @@ class GuiBackend(QObject):
         if self.proc is not None:
             self.logAppended.emit("stopping…")
             self.proc.terminate()
+        # Close the DeepL browser cleanly first (tabs + Browser.close), so it
+        # never session-restores a pile of tabs; kill is the fallback.
+        if process.close_translator_browser():
+            self.logAppended.emit("translation browser closed.")
         if self.textbox_proc is not None and self.textbox_proc.poll() is None:
             self.logAppended.emit("stopping translation readout…")
             process.kill_textbox_group(self.textbox_proc, _sig.SIGTERM)
@@ -528,6 +532,7 @@ class GuiBackend(QObject):
                 process.kill_textbox_group(self.textbox_proc, _sig.SIGKILL)
                 self.logAppended.emit("translation readout stopped.")
             self.textbox_proc = None
+        process.close_translator_browser()
         if process.kill_orphan_browsers():
             self.logAppended.emit("translator browser stopped.")
 

@@ -98,6 +98,121 @@ def textbox_brave_pattern():
     return f"user-data-dir=[^ ]*{esc}"
 
 
+_BLOCKED_PROFILE_ROOTS = (
+    "~/.config/BraveSoftware", "~/.config/brave", "~/.config/Brave-Browser",
+    "~/.config/chromium", "~/.config/google-chrome",
+    "~/.config/google-chrome-beta", "~/.config/microsoft-edge",
+    "~/.config/vivaldi", "~/.config/opera",
+)
+
+
+def is_safe_automation_profile(path):
+    """False for a real browser profile (or a bare home/config/cache root).
+    Automation may only touch its own isolated --user-data-dir."""
+    if not path:
+        return False
+    p = os.path.realpath(os.path.expanduser(path))
+    home = os.path.expanduser("~")
+    for blocked in _BLOCKED_PROFILE_ROOTS:
+        rb = os.path.realpath(os.path.expanduser(blocked))
+        if p == rb or p.startswith(rb + os.sep):
+            return False
+    for root in (home, os.path.join(home, ".config"), os.path.join(home, ".cache")):
+        if p == os.path.realpath(root):
+            return False
+    return True
+
+
+def translate_cdp_port():
+    try:
+        with open(os.path.join(paths.TRANSLATE_DIR, "config.json"), encoding="utf-8") as f:
+            return int((json.load(f) or {}).get("debugport", 9222))
+    except (OSError, ValueError, TypeError):
+        return 9222
+
+
+def purge_browser_session(profile=None):
+    """Drop the isolated browser's session files so a fresh launch can never
+    session-restore a pile of DeepL tabs (docs/translate.md). Guarded."""
+    prof = profile or translate_cdp_profile()[0]
+    if not is_safe_automation_profile(prof):
+        return False
+    import shutil
+    default = os.path.join(os.path.expanduser(prof), "Default")
+    removed = False
+    for name in ("Current Session", "Current Tabs", "Last Session", "Last Tabs"):
+        f = os.path.join(default, name)
+        if os.path.isfile(f):
+            try:
+                os.remove(f)
+                removed = True
+            except OSError:
+                pass
+    sessions = os.path.join(default, "Sessions")
+    if os.path.isdir(sessions):
+        try:
+            shutil.rmtree(sessions)
+            removed = True
+        except OSError:
+            pass
+    return removed
+
+
+def _browser_is_ours(profile, port):
+    """True only when a live process was started with BOTH our isolated
+    --user-data-dir and the CDP port (so a user's own browser is never hit)."""
+    rp = os.path.realpath(os.path.expanduser(profile))
+    user_arg = f"--user-data-dir={rp}"
+    port_arg = f"--remote-debugging-port={port}"
+    try:
+        pids = [p for p in os.listdir("/proc") if p.isdigit()]
+    except OSError:
+        return False
+    for pid in pids:
+        try:
+            with open(f"/proc/{pid}/cmdline", "rb") as f:
+                cmd = f.read().decode("utf-8", "replace")
+        except OSError:
+            continue
+        if user_arg in cmd and port_arg in cmd:
+            return True
+    return False
+
+
+def close_translator_browser(timeout=4):
+    """Close the translator browser's tabs and exit it cleanly (no session
+    restore), never touching a browser that isn't ours. Never raises."""
+    port = translate_cdp_port()
+    profile = translate_cdp_profile()[0]
+    if not is_safe_automation_profile(profile) or not _browser_is_ours(profile, port):
+        return False
+    try:
+        import requests
+        import websocket
+        ver = requests.get(f"http://127.0.0.1:{port}/json/version", timeout=2).json()
+        targets = requests.get(f"http://127.0.0.1:{port}/json/list", timeout=2).json()
+        if not _browser_is_ours(profile, port):  # recheck after the probes
+            return False
+        ws = websocket.create_connection(ver["webSocketDebuggerUrl"], timeout=3)
+        for t in targets:
+            if t.get("type") == "page" and t.get("id"):
+                ws.send(json.dumps({"id": 1, "method": "Target.closeTarget",
+                                    "params": {"targetId": t["id"]}}))
+                try:
+                    ws.recv()
+                except Exception:
+                    pass
+        ws.send(json.dumps({"id": 2, "method": "Browser.close"}))
+        try:
+            ws.recv()
+        except Exception:
+            pass
+        ws.close()
+        return True
+    except Exception:
+        return False
+
+
 def kill_textbox_group(proc, sig):
     """Signal the textbox process group (backend + translator browser it
     spawned). Returns True if a live group was signaled."""

@@ -5,15 +5,21 @@ see translate/config.json `brave_bin`) with --remote-debugging-port, drives
 deepl.com via CDP: clear input, Input.insertText, poll d-textarea[1] for the
 result. Port of LunaTranslator translator/cdp_helper.py + deepl_1.py.
 """
-import hashlib
 import json
 import os
 import subprocess
+import sys
 import threading
 import time
 
 import requests
 import websocket
+
+# Shared guards/helpers (safe profile check, session purge) live in core.
+_REPO = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+if _REPO not in sys.path:
+    sys.path.insert(0, _REPO)
+from core import process as _proc  # noqa: E402
 
 
 class BraveCDP:
@@ -36,7 +42,11 @@ class BraveCDP:
             return
         except Exception:
             pass
+        # No session restore: drop stale session state so a fresh launch never
+        # reopens a pile of DeepL tabs (guarded, isolated profile only).
+        _proc.purge_browser_session(self._profile_dir())
         cmd = [self.config["brave_bin"], "--no-first-run",
+               "--hide-crash-restore-bubble",
                f"--remote-debugging-port={self.port}",
                "--remote-allow-origins=*",
                f"--user-data-dir={self._profile_dir()}"]
@@ -53,34 +63,61 @@ class BraveCDP:
         raise RuntimeError("brave CDP endpoint never came up")
 
     def _connect(self):
-        infos = requests.get(f"http://127.0.0.1:{self.port}/json/list", timeout=5).json()
+        base = f"http://127.0.0.1:{self.port}"
+        infos = requests.get(f"{base}/json/list", timeout=5).json()
         target = self.config["deepl_url"].split("/en/translator")[0]
-        use = None
-        first = None
-        for info in infos:
-            wsurl = info.get("webSocketDebuggerUrl")
-            if not wsurl:
-                continue
-            if not first:
-                first = wsurl
-            if (info.get("url") or "").startswith(target):
-                use = wsurl
-                break
-        if use is None:
-            if first is None:
-                raise RuntimeError(f"no debuggable targets: {infos}")
-            tmp = websocket.create_connection(first, timeout=10)
-            self._id += 1
-            tmp.send(json.dumps({"id": self._id, "method": "Target.createTarget",
-                                 "params": {"url": self.config["deepl_url"]}}))
-            res = json.loads(tmp.recv())
-            tmp.close()
-            use = f"ws://127.0.0.1:{self.port}/devtools/page/" + res["result"]["targetId"]
-        ws = websocket.create_connection(use, timeout=10)
+        pages = [i for i in infos
+                 if i.get("type") == "page" and i.get("webSocketDebuggerUrl")]
+        use = next((i for i in pages
+                    if (i.get("url") or "").startswith(target)), None)
+        if use is not None:
+            ws = websocket.create_connection(use["webSocketDebuggerUrl"], timeout=10)
+        elif pages:
+            # Reuse an existing tab instead of stacking a new one.
+            use = pages[0]
+            ws = websocket.create_connection(use["webSocketDebuggerUrl"], timeout=10)
+        else:
+            ws = self._new_tab(base)
+            use = {"id": None}
+        self._close_other_pages(base, use.get("id"))
         self._send(ws, "Page.navigate", {"url": self.config["deepl_url"]})
         self._wait_ready(ws)
         self._activate(ws)
         return ws
+
+    def _new_tab(self, base):
+        ver = requests.get(f"{base}/json/version", timeout=5).json()
+        bws = websocket.create_connection(ver["webSocketDebuggerUrl"], timeout=10)
+        self._id += 1
+        bws.send(json.dumps({"id": self._id, "method": "Target.createTarget",
+                             "params": {"url": self.config["deepl_url"]}}))
+        res = json.loads(bws.recv())
+        bws.close()
+        return websocket.create_connection(
+            f"ws://127.0.0.1:{self.port}/devtools/page/" + res["result"]["targetId"],
+            timeout=10)
+
+    def _close_other_pages(self, base, keep_id):
+        """Keep exactly one DeepL tab (docs/translate.md). Never raises."""
+        try:
+            extra = [t for t in requests.get(f"{base}/json/list", timeout=3).json()
+                     if t.get("type") == "page" and t.get("id")
+                     and t.get("id") != keep_id]
+            if not extra:
+                return
+            ver = requests.get(f"{base}/json/version", timeout=3).json()
+            bws = websocket.create_connection(ver["webSocketDebuggerUrl"], timeout=3)
+            for t in extra:
+                self._id += 1
+                bws.send(json.dumps({"id": self._id, "method": "Target.closeTarget",
+                                     "params": {"targetId": t["id"]}}))
+                try:
+                    bws.recv()
+                except Exception:
+                    pass
+            bws.close()
+        except Exception:
+            pass
 
     def _activate(self, ws):
         """DeepL only translates after real user activation, which headless
