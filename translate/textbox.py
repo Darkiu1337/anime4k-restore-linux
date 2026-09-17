@@ -23,6 +23,7 @@ REPO_ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 sys.path.insert(0, REPO_ROOT)
 from cfg import load_config
+import placement as placement_mod
 from core import process as core_process
 CONFIG = load_config()
 ORG, APP = "vn-translate", "textbox"
@@ -141,6 +142,8 @@ class Backend(QObject):
         self._corner_radius = 10
         self._home_ws = None
         self.last_text_time = time.time()
+        self._placement = placement_mod.Placement()
+        self._saved_geom = None
         self._window = None
         self._title_h = 25
         self._tool_h = 27
@@ -323,16 +326,23 @@ class Backend(QObject):
             pass
 
     # ---- window wiring ----
-    def attach_window(self, win):
+    def attach_window(self, win, placement=None):
         self._window = win
+        self._placement = placement or placement_mod.Placement()
         try:
             fmt = win.format()
             fmt.setAlphaBufferSize(8)
             win.setFormat(fmt)
         except Exception:
             pass
+        # restore_state() runs while the window is still hidden (QML
+        # visible: false), so the first map already has the restored size.
         self.restore_state()
         self.apply_flags(initial=True)
+        # Compositor adapters that can only place the window once it exists
+        # (sway) run here; Hyprland already floated it pre-map via a rule.
+        _saved = self._saved_geom
+        QTimer.singleShot(0, lambda: self._placement.after_map(_saved))
         # Always float (a tiled overlay is useless); Top additionally
         # pins/raises. Top-off unpins (also neutralizes a stale session rule).
         self._hyprctl_float_deferred()
@@ -631,6 +641,14 @@ class Backend(QObject):
         try:
             if self._window is not None:
                 s.setValue("geometry", self._window.saveGeometry())
+        except Exception:
+            pass
+        # Compositor-reported geometry (Wayland cannot give Qt a position);
+        # consumed by the placement adapter on the next launch.
+        try:
+            geom = self._placement.capture(os.getpid()) if self._placement else None
+            if geom:
+                s.setValue("compositor_geometry", json.dumps(geom))
         except Exception:
             pass
         s.setValue("show_ja", self._show_ja)
@@ -1123,6 +1141,18 @@ def main():
     args = sys.argv[1:]
     if "--thread" in args and args.index("--thread") + 1 < len(args):
         backend.thread = args[args.index("--thread") + 1]
+    headless = "--self-test" in sys.argv or "--smoke-test" in sys.argv
+    placement = placement_mod.detect()
+    try:
+        from PySide6.QtCore import QSettings
+        raw = QSettings(ORG, APP).value("compositor_geometry")
+        backend._saved_geom = json.loads(raw) if raw else None
+    except Exception:
+        backend._saved_geom = None
+    # Float before the window maps (tiling compositors would otherwise tile it
+    # and clobber the geometry). Skipped for the offscreen self-tests.
+    if not headless:
+        placement.pre_map(backend._saved_geom)
     app._qml_objects = (backend,)
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("pairModel", backend.pairs)
@@ -1138,7 +1168,7 @@ def main():
         print("qml load failed", "\n".join(str(e) for e in qml_errors), file=sys.stderr)
         sys.exit(2)
     window = roots[0]
-    backend.attach_window(window)
+    backend.attach_window(window, placement)
     if "--smoke-test" in sys.argv or "--self-test" in sys.argv:
         if "--self-test" in sys.argv:
             QTimer.singleShot(800, lambda: self_test(backend, window))

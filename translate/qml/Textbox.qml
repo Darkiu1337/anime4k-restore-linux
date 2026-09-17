@@ -11,7 +11,9 @@ ApplicationWindow {
     title: "vn-translate"
     width: 520
     height: 320
-    visible: true
+    // Hidden until attach_window() has restored the geometry and the
+    // compositor adapter has floated it, so the first map is already correct.
+    visible: false
     color: "transparent"
     flags: Qt.FramelessWindowHint | Qt.Tool
 
