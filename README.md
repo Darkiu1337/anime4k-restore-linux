@@ -54,10 +54,10 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
 * **Theme**: the GUI and the translation textbox use the KDE Quick Controls
   style and follow your desktop colour scheme (e.g. Omarchy's KDE theme),
   light or dark.
-* **Settings**: a per-app GUI font (defaults to your environment font; the
-  textbox keeps its own), and a Proton picker that scans the common
-  `compatibilitytools.d` folders — UMU-Proton is always available, and a
-  selected build without new WoW64 support falls back to it automatically.
+* **Settings** (top bar): a per-app GUI font (defaults to your environment
+  font; the textbox keeps its own) and a Proton picker that scans the common
+  `compatibilitytools.d` folders. UMU-Proton is always available; a selected
+  build without new WoW64 support is flagged and falls back to it at launch.
 * **Game detection**: engine sniffing pre-selects the runner.
 * **Frame caps everywhere**: DXVK on Proton, MangoHud elsewhere; optional
   overlay readout.
@@ -92,11 +92,15 @@ Details: `requirements.md`. One shared Wine prefix lives under
 `anime4k-gui` (plus `vn-launch` / `vn-textbox` / `vn-translate` with
 translation support) into `~/.local/bin` and offers to add it to `PATH`.
 
+In the GUI, the top bar has **Settings** (Wine prefix, Proton picker, per-app
+font, vkBasalt layer dir) and **Quit**; everything else is per-game in the
+wizard and the game list.
+
 ## Troubleshooting
 
 ```sh
 anime4k doctor                 # audit the whole chain (filter, runners, translation, GUI)
-anime4k-gui --diagnose         # versions, paths, style/palette, QML context validity
+anime4k-gui --diagnose         # versions, paths, style/font/palette, QML context validity
 anime4k-gui --self-test        # load the entire UI headlessly; fails on any QML error
 ```
 

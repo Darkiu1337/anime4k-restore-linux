@@ -55,7 +55,11 @@ The GUI and textbox use the **KDE Quick Controls style**
 [verified]; Debian/Ubuntu: `qqc2-desktop-style`; Fedora:
 `kf6-qqc2-desktop-style`. Without it they fall back to Fusion. The GUI font
 defaults to your environment font (e.g. qt6ct/KDE) and can be overridden
-per-app in Settings. There is no in-app theme switch. `anime4k-gui --diagnose`
+per-app in Settings. The top-bar **Settings** dialog also has a Proton picker
+(`core.system.list_protons()`): it lists the builds under the common
+`compatibilitytools.d` folders (Steam, Flatpak, `/usr`) with UMU-Proton
+pinned; a build without new WoW64 support is flagged and falls back to
+UMU-Proton at launch. There is no in-app theme switch. `anime4k-gui --diagnose`
 prints the resolved style, font and palette, and `--self-test` loads the whole
 UI headlessly (see README).
 
