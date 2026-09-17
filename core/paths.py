@@ -9,6 +9,7 @@ CONFIG_DIR = os.path.expanduser("~/.config/anime4k")
 GAMES_JSON = os.path.join(CONFIG_DIR, "games.json")
 CONFIG_JSON = os.path.join(CONFIG_DIR, "config.json")
 ICON_CACHE = os.path.expanduser("~/.cache/anime4k/icons")
+GPU_CACHE = os.path.expanduser("~/.cache/anime4k/gpus.json")
 
 DEFAULT_PREFIX = os.path.join(os.path.expanduser("~"), ".local/share/anime4k/prefixes/default")
 

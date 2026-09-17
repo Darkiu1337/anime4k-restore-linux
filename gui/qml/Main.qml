@@ -244,10 +244,21 @@ ApplicationWindow {
         padding: 16
         anchors.centerIn: parent
         standardButtons: Dialog.Ok
-        Label {
-            id: previewLabel
+        ColumnLayout {
+            spacing: 8
             width: previewDlg.availableWidth
-            wrapMode: Text.Wrap
+            // Underline below the dialog title (matches the top bar divider).
+            Rectangle {
+                Layout.fillWidth: true
+                Layout.preferredHeight: 1
+                color: previewDlg.palette.windowText
+                opacity: 0.25
+            }
+            Label {
+                id: previewLabel
+                Layout.fillWidth: true
+                wrapMode: Text.Wrap
+            }
         }
     }
 
@@ -265,6 +276,14 @@ ApplicationWindow {
         function onDone(result) {
             if (promptDlg.tag === "delete" && result === 0 && root.gid !== "")
                 backend.removeGame(root.gid)
+        }
+    }
+
+    Connections {
+        target: gamesModel
+        function onIconResolved(gid, path) {
+            if (gid === root.gid && path !== "")
+                detailIcon.source = "file://" + path
         }
     }
 }

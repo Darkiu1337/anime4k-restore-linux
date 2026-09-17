@@ -6,8 +6,8 @@ import QtQuick.Layouts
 Dialog {
     id: root
     modal: true
-    width: Math.min(680, root.parent ? root.parent.width - 48 : 680)
-    height: Math.min(540, root.parent ? root.parent.height - 48 : 540)
+    width: Math.min(760, root.parent ? root.parent.width - 48 : 760)
+    height: Math.min(560, root.parent ? root.parent.height - 48 : 560)
     padding: 16
     anchors.centerIn: parent
     standardButtons: Dialog.NoButton
@@ -15,7 +15,21 @@ Dialog {
     property var runnerKeys: ["proton", "rpgmaker", "native"]
     property var runnerDescs: []
     property var variantNames: []
+    property var localeModel: []
     property string runner: "proton"
+    // Remembered GPU pick so a late gpusChanged refresh can restore it.
+    property string wantedGpu: ""
+
+    ButtonGroup { id: runnerGroup }
+
+    Connections {
+        target: backend
+        function onGpusChanged() {
+            gpuCombo.model = backend.listGpus()
+            var i = root.wantedGpu === "" ? 0 : gpuCombo.find(root.wantedGpu)
+            gpuCombo.currentIndex = i >= 0 ? i : 0
+        }
+    }
 
     function start(gid) {
         root.gid = gid
@@ -28,6 +42,7 @@ Dialog {
             return n !== "" ? v + " — " + n : v
         })
         gpuCombo.model = backend.listGpus()
+        root.localeModel = backend.locales()
         if (gid === "") {
             root.runner = "proton"
             runnerRepeater.itemAt(0).checked = true
@@ -35,14 +50,15 @@ Dialog {
             detectLabel.text = "Tip: Detect fills in the runner from the previous page."
             variantCombo.currentIndex = Math.max(0, root.variantNames.indexOf("L"))
             gpuCombo.currentIndex = 0
+            root.wantedGpu = ""
             fpsSpin.value = 60
             hudCheck.checked = false
             langCombo.currentIndex = 0
             prefixCheck.checked = false
             nameField.text = ""
             trEnable.checked = false
-            trHook.text = ""
             browserCheck.checked = false
+            hookerCheck.checked = false
         } else {
             var g = JSON.parse(backend.gameData(gid))
             root.runner = g.runner || "proton"
@@ -50,20 +66,24 @@ Dialog {
                 runnerRepeater.itemAt(i).checked = (root.runnerKeys[i] === root.runner)
             pathField.text = g.path || ""
             variantCombo.currentIndex = Math.max(0, root.variantNames.indexOf(g.variant || "L"))
-            var gi = gpuCombo.find(g.gpu || "")
+            root.wantedGpu = g.gpu || ""
+            var gi = gpuCombo.find(root.wantedGpu)
             gpuCombo.currentIndex = gi >= 0 ? gi : 0
             fpsSpin.value = g.fps === "off" ? 0 : (parseInt(g.fps) || 60)
             hudCheck.checked = g.hud === "1"
-            var li = langCombo.find(g.lang || "")
-            if (li >= 0)
-                langCombo.currentIndex = li
-            else { langCombo.currentIndex = -1; langCombo.editText = g.lang || "" }
+            // Keep a stored custom locale selectable (drop-down only).
+            var locs = backend.locales()
+            var lv = g.lang || ""
+            if (lv !== "" && locs.indexOf(lv) < 0)
+                locs.push(lv)
+            root.localeModel = locs
+            langCombo.currentIndex = Math.max(0, locs.indexOf(lv))
             prefixCheck.checked = g.prefix_mode === "game"
             nameField.text = g.name || ""
             var tr = g.translate || {}
             trEnable.checked = tr.enabled === "1"
-            trHook.text = tr.hook_code || ""
             browserCheck.checked = tr.show_browser === "1"
+            hookerCheck.checked = tr.show_hooker === "1"
         }
         errLabel.text = ""
         pages.currentIndex = 0
@@ -71,9 +91,7 @@ Dialog {
     }
 
     function collect() {
-        var lang = langCombo.editText.trim()
-        if (langCombo.currentIndex === 0)
-            lang = ""
+        var lang = langCombo.currentIndex <= 0 ? "" : langCombo.currentText
         return JSON.stringify({
             name: nameField.text.trim(),
             runner: root.runner,
@@ -86,8 +104,8 @@ Dialog {
             prefix_mode: prefixCheck.checked ? "game" : "shared",
             translate: {
                 enabled: (trEnable.checked && root.runner === "proton") ? "1" : "0",
-                hook_code: trHook.text.trim(),
-                show_browser: browserCheck.checked ? "1" : "0"
+                show_browser: browserCheck.checked ? "1" : "0",
+                show_hooker: hookerCheck.checked ? "1" : "0"
             }
         })
     }
@@ -160,8 +178,17 @@ Dialog {
         width: availableWidth
         height: availableHeight
 
+        // Underline below the dialog title (matches the top bar divider).
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 1
+            color: root.palette.windowText
+            opacity: 0.25
+        }
+
         StackLayout {
             id: pages
+            objectName: "wizardPages"
             Layout.fillWidth: true
             Layout.fillHeight: true
             clip: true
@@ -172,6 +199,7 @@ Dialog {
                     id: sv1
                     anchors.fill: parent
                     clip: true
+                    contentWidth: availableWidth
                     ColumnLayout {
                         width: sv1.availableWidth
                         spacing: 8
@@ -179,10 +207,13 @@ Dialog {
                         Repeater {
                             id: runnerRepeater
                             model: root.runnerDescs
-                            RadioButton {
+                            // CheckBox (square) + exclusive group, so the runner
+                            // picker matches the other checkboxes in the wizard.
+                            CheckBox {
                                 text: modelData
                                 checked: index === 0
                                 enabled: root.gid === ""
+                                ButtonGroup.group: runnerGroup
                                 onCheckedChanged: if (checked) root.runner = root.runnerKeys[index]
                             }
                         }
@@ -195,6 +226,7 @@ Dialog {
                     id: sv2
                     anchors.fill: parent
                     clip: true
+                    contentWidth: availableWidth
                     ColumnLayout {
                         width: sv2.availableWidth
                         spacing: 8
@@ -260,6 +292,7 @@ Dialog {
                     id: sv3
                     anchors.fill: parent
                     clip: true
+                    contentWidth: availableWidth
                     GridLayout {
                         width: sv3.availableWidth
                         columns: 2
@@ -293,9 +326,8 @@ Dialog {
                         ComboBox {
                             id: langCombo
                             objectName: "langCombo"
-                            editable: true
                             Layout.fillWidth: true
-                            model: backend.locales()
+                            model: root.localeModel
                         }
                         CheckBox {
                             id: prefixCheck
@@ -311,6 +343,7 @@ Dialog {
                     id: sv4
                     anchors.fill: parent
                     clip: true
+                    contentWidth: availableWidth
                     ColumnLayout {
                         width: sv4.availableWidth
                         spacing: 8
@@ -329,27 +362,36 @@ Dialog {
                     id: sv5
                     anchors.fill: parent
                     clip: true
+                    contentWidth: availableWidth
                     ColumnLayout {
                         width: sv5.availableWidth
                         spacing: 8
                         Label { text: "Translation (Japanese VNs)"; font.bold: true }
                         CheckBox {
                             id: trEnable
+                            objectName: "trEnable"
                             text: "Translate Japanese dialogue via DeepL"
+                        }
+                        Label {
+                            text: "Debug"
+                            font.bold: true
+                            topPadding: 8
+                            opacity: trEnable.checked ? 1.0 : 0.5
                         }
                         CheckBox {
                             id: browserCheck
                             objectName: "browserCheck"
                             text: "Show the DeepL browser window (debug)"
+                            enabled: trEnable.checked
                         }
-                        Label { text: "Hook code:" }
-                        TextField {
-                            id: trHook
-                            Layout.fillWidth: true
-                            placeholderText: "hook code, e.g. HSX10@54DC0:game.exe (optional)"
+                        CheckBox {
+                            id: hookerCheck
+                            objectName: "hookerCheck"
+                            text: "Show Textractor during Setup (debug)"
+                            enabled: trEnable.checked
                         }
                         Label {
-                            text: "Proton/Windows games only. Filter and translation compose in one launch. First run: enable, then run Setup Text Hooker for translation — it opens the picker and records the hook. The DeepL browser stays hidden (headless); tick the box above to watch it."
+                            text: "Proton/Windows games only. Filter and translation compose in one launch. First run: enable, then Translate (or Setup Text Hooker) — Textractor stays hidden and the in-app picker records the story thread. Debug boxes reveal the DeepL browser and Textractor."
                             opacity: 0.7
                             wrapMode: Text.Wrap
                             Layout.fillWidth: true

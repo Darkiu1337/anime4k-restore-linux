@@ -7,6 +7,11 @@ Dialog {
     title: "Settings"
     modal: true
     width: Math.min(600, root.parent ? root.parent.width - 48 : 600)
+    // The KDE style reports a bogus implicitHeight, so size to the content.
+    height: Math.min(implicitHeaderHeight + implicitFooterHeight
+                     + topPadding + bottomPadding
+                     + (settingsGrid ? settingsGrid.implicitHeight : 0),
+                     root.parent ? root.parent.height - 48 : 900)
     padding: 16
     anchors.centerIn: parent
     standardButtons: Dialog.Save | Dialog.Cancel
@@ -65,10 +70,22 @@ Dialog {
     }
 
     GridLayout {
+        id: settingsGrid
+        objectName: "settingsGrid"
         columns: 2
         width: availableWidth
         columnSpacing: 12
         rowSpacing: 10
+
+        // Underline below the dialog title (matches the top bar divider).
+        Rectangle {
+            Layout.columnSpan: 2
+            Layout.fillWidth: true
+            Layout.preferredHeight: 1
+            Layout.bottomMargin: 2
+            color: root.palette.windowText
+            opacity: 0.25
+        }
 
         Label { text: "Wine prefix default:" }
         TextField {
@@ -137,6 +154,27 @@ Dialog {
             }
         }
 
+        Label { text: "GPU list (game picker):" }
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: 6
+            Label {
+                id: gpuStatus
+                Layout.fillWidth: true
+                text: "Cached; refreshes automatically when GPUs change."
+                opacity: 0.7
+                font.pointSize: 8
+                wrapMode: Text.Wrap
+            }
+            Btn {
+                text: "Refresh"
+                onClicked: {
+                    gpuStatus.text = "Probing GPUs…"
+                    backend.refreshGpus()
+                }
+            }
+        }
+
         Label { text: "vkBasalt layer dir:" }
         TextField {
             id: layerField
@@ -152,6 +190,14 @@ Dialog {
             wrapMode: Text.Wrap
             Layout.columnSpan: 2
             Layout.fillWidth: true
+        }
+    }
+
+    Connections {
+        target: backend
+        function onGpusChanged() {
+            if (root.visible)
+                gpuStatus.text = "GPU list refreshed."
         }
     }
 }

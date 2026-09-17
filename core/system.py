@@ -1,8 +1,15 @@
+import glob
+import json
 import os
 import re
 import subprocess
+import time
 
 from . import paths
+
+# GPU list cache lifetime. Hardware changes are caught by gpu_fingerprint();
+# the TTL only covers driver/name changes without a hardware change.
+GPU_CACHE_TTL = 24 * 3600
 
 
 def list_variants():
@@ -37,6 +44,73 @@ def list_gpus():
     except (OSError, subprocess.SubprocessError):
         pass
     return names
+
+
+def gpu_fingerprint():
+    """Cheap hardware fingerprint (vendor:device per DRM card) used to
+    invalidate the cached GPU list on a GPU add/remove/swap. Reads sysfs
+    (~0.4ms, no driver init); falls back to `lspci -nn`."""
+    ids = []
+    for d in sorted(glob.glob("/sys/class/drm/card*/device")):
+        try:
+            with open(os.path.join(d, "vendor"), encoding="utf-8") as f:
+                vendor = f.read().strip().lower()
+            with open(os.path.join(d, "device"), encoding="utf-8") as f:
+                device = f.read().strip().lower()
+        except OSError:
+            continue
+        if vendor and device:
+            ids.append(f"{vendor}:{device}")
+    if ids:
+        return "|".join(ids)
+    try:
+        out = subprocess.run(["lspci", "-nn"], capture_output=True, text=True,
+                             timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ""
+    for line in out.splitlines():
+        if not re.search(r"VGA compatible controller|3D controller|"
+                         r"Display controller", line):
+            continue
+        m = re.search(r"\[([0-9a-fA-F]{4}):([0-9a-fA-F]{4})\]", line)
+        if m:
+            ids.append(f"0x{m.group(1).lower()}:0x{m.group(2).lower()}")
+    return "|".join(ids)
+
+
+def gpu_cache(ttl=GPU_CACHE_TTL, fingerprint=None):
+    """(gpus, stale) from ~/.cache/anime4k/gpus.json. gpus is None when the
+    cache is missing/malformed; stale also when the fingerprint differs or
+    the entry is older than ttl. Never calls vulkaninfo."""
+    try:
+        with open(paths.GPU_CACHE, encoding="utf-8") as f:
+            data = json.load(f)
+        gpus = data.get("gpus")
+        ts = float(data.get("ts", 0))
+        fp = data.get("fingerprint", "")
+    except (OSError, ValueError, TypeError):
+        return None, True
+    if not isinstance(gpus, list) or len(gpus) < 2:
+        return None, True
+    stale = (time.time() - ts) > ttl
+    if fingerprint is not None and fp != fingerprint:
+        stale = True
+    return gpus, stale
+
+
+def save_gpu_cache(gpus, fingerprint=""):
+    """Persist a real GPU list (>1 entry) for the next launch. Never raises."""
+    if not isinstance(gpus, list) or len(gpus) < 2:
+        return
+    try:
+        os.makedirs(os.path.dirname(paths.GPU_CACHE), exist_ok=True)
+        tmp = paths.GPU_CACHE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump({"ts": time.time(), "fingerprint": fingerprint,
+                       "gpus": gpus}, f, indent=2)
+        os.replace(tmp, paths.GPU_CACHE)
+    except OSError:
+        pass
 
 
 # Proton discovery for the launcher's Proton dropdown. Only Proton-type

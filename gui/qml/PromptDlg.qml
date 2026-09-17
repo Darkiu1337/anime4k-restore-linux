@@ -38,6 +38,13 @@ Dialog {
     contentItem: Column {
         width: availableWidth
         spacing: 12
+        // Underline below the dialog title (matches the top bar divider).
+        Rectangle {
+            width: parent.width
+            height: 1
+            color: root.palette.windowText
+            opacity: 0.25
+        }
         Label {
             text: root.body
             width: parent.width

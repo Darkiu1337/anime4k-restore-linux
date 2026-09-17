@@ -8,6 +8,7 @@ this file is the QML bootstrap plus the QML-bound backend.
 import json
 import os
 import sys
+import threading
 
 APP_DIR = os.path.dirname(os.path.realpath(__file__))
 REPO_ROOT = os.path.dirname(APP_DIR)
@@ -97,9 +98,17 @@ class GamesModel(QAbstractListModel):
     InfoRole = Qt.UserRole + 3
     IconRole = Qt.UserRole + 4
 
+    iconResolved = Signal(str, str)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self._rows = []
+        self._icon_pending = set()
+        self._icon_attempted = set()
+        self._icon_wanted = set()
+        self._icon_flush_scheduled = False
+        # Emitted from the icon worker; auto-queued onto the GUI thread.
+        self.iconResolved.connect(self._apply_icon)
 
     def roleNames(self):
         return {GamesModel.GidRole: b"gid", GamesModel.NameRole: b"name",
@@ -117,11 +126,16 @@ class GamesModel(QAbstractListModel):
 
     @Slot()
     def refresh(self):
+        # Cached icons only: extraction (icoextract) runs in the background so
+        # opening/refreshing the list never blocks the GUI thread.
         self.beginResetModel()
         rows = []
+        missing = []
         for gid, g in sorted(store.load_games().items(),
                              key=lambda kv: kv[1].get("name", "")):
-            ip = icons.resolve_icon(g.get("runner", ""), g.get("path", ""), gid)
+            ip = icons.cached_icon(gid)
+            if ip is None and gid not in self._icon_attempted:
+                missing.append(gid)
             tr = (g.get("translate") or {}).get("enabled") == "1"
             rows.append({
                 "gid": gid,
@@ -131,6 +145,60 @@ class GamesModel(QAbstractListModel):
             })
         self._rows = rows
         self.endResetModel()
+        self._want_icons(missing)
+
+    @Slot(str)
+    def request_icon(self, gid):
+        """Ask for one game's icon (detail pane); resolves in the background."""
+        self._want_icons([gid])
+
+    def _want_icons(self, gids):
+        """Queue icons but defer the worker past the first paint so icoextract
+        never competes with the window map (see HANDOFF)."""
+        self._icon_wanted.update(
+            g for g in gids if g and g not in self._icon_attempted)
+        if self._icon_wanted and not self._icon_flush_scheduled:
+            self._icon_flush_scheduled = True
+            QTimer.singleShot(1200, self._flush_icons)
+
+    @Slot()
+    def _flush_icons(self):
+        self._icon_flush_scheduled = False
+        gids = list(self._icon_wanted)
+        self._icon_wanted.clear()
+        self._queue_icons(gids)
+
+    def _queue_icons(self, gids):
+        todo = [g for g in gids
+                if g and g not in self._icon_pending
+                and g not in self._icon_attempted]
+        if not todo:
+            return
+        self._icon_pending.update(todo)
+        threading.Thread(target=self._icon_worker, args=(todo,), daemon=True).start()
+
+    def _icon_worker(self, gids):
+        games = store.load_games()
+        for gid in gids:
+            self._icon_pending.discard(gid)
+            self._icon_attempted.add(gid)
+            g = games.get(gid) or {}
+            try:
+                path = icons.resolve_icon(g.get("runner", ""),
+                                          g.get("path", ""), gid)
+            except Exception:
+                path = None
+            if path:
+                self.iconResolved.emit(gid, path)
+
+    @Slot(str, str)
+    def _apply_icon(self, gid, path):
+        for i, r in enumerate(self._rows):
+            if r["gid"] == gid:
+                r["icon"] = ("file://" + path) if path else ""
+                idx = self.index(i, 0)
+                self.dataChanged.emit(idx, idx, [GamesModel.IconRole])
+                return
 
     @Slot(str, result=int)
     def index_of(self, gid):
@@ -156,6 +224,7 @@ class GuiBackend(QObject):
     threadResults = Signal(str)
     gamesChanged = Signal()
     setupLaunched = Signal(str)
+    gpusChanged = Signal()
 
     def __init__(self, model, parent=None):
         super().__init__(parent)
@@ -168,6 +237,12 @@ class GuiBackend(QObject):
         self._running_gid = None
         self._running_translate = False
         self._pending = None
+        self._pick_cancel = threading.Event()
+        self._gpu_warming = False
+        self._gpu_fp = system.gpu_fingerprint()
+        # Load the cached list (instant, no vulkaninfo at startup); a cold or
+        # stale cache warms lazily on the first listGpus() call.
+        self._gpus, self._gpu_stale = system.gpu_cache(fingerprint=self._gpu_fp)
         self._timer = QTimer(self)
         self._timer.timeout.connect(self.poll_bridge)
         self._timer.start(3000)
@@ -255,9 +330,13 @@ class GuiBackend(QObject):
 
     @Slot(str, result=str)
     def iconFor(self, gid):
-        g = store.load_games().get(gid, {})
-        ip = icons.resolve_icon(g.get("runner", ""), g.get("path", ""), gid)
-        return ("file://" + ip) if ip else ""
+        # Cached only; kick background extraction and fill in when ready
+        # (gamesModel.iconResolved → Main.qml).
+        ip = icons.cached_icon(gid)
+        if ip is None:
+            self._model.request_icon(gid)
+            return ""
+        return "file://" + ip
 
     @Slot(str, result=str)
     def gameDetails(self, gid):
@@ -267,9 +346,13 @@ class GuiBackend(QObject):
         tr = g.get("translate", {})
         tr_txt = ""
         if tr.get("enabled") == "1":
-            tr_txt = (f"Translation: on ({tr.get('hook_code') or 'hook auto-detect'})"
-                      + (f", thread {tr.get('thread')}" if tr.get("thread") else "")
-                      + "<br>")
+            src = (tr.get("hook_code") or "").strip()
+            thread = (tr.get("thread") or "").strip()
+            if src and thread:
+                src = f"{src}, thread {thread}"
+            elif thread:
+                src = f"thread {thread}"
+            tr_txt = f"Translation: on ({src or 'hook auto-detect'})<br>"
         return (
             f"<b>{g.get('name', gid)}</b><br>"
             f"Runner: {g.get('runner', '?')} &nbsp; Variant: {g.get('variant', '?')}<br>"
@@ -290,7 +373,45 @@ class GuiBackend(QObject):
 
     @Slot(result="QVariant")
     def listGpus(self):
-        return system.list_gpus()
+        # Instant: cached list, or the fallback until the background warm
+        # finishes (then gpusChanged lets the wizard refill the combo).
+        # Re-check the cheap fingerprint to catch a GPU added/removed.
+        fp = system.gpu_fingerprint()
+        if fp != self._gpu_fp:
+            self._gpu_fp = fp
+            self._gpu_stale = True
+        if self._gpus is None or self._gpu_stale:
+            self.warm_gpus()
+            if self._gpus is None:
+                return ["auto (discrete GPU preferred)"]
+        return self._gpus
+
+    @Slot()
+    def refreshGpus(self):
+        """Force a fresh GPU probe (Settings > Refresh GPUs)."""
+        self._gpu_stale = True
+        self.warm_gpus()
+
+    def warm_gpus(self):
+        if self._gpu_warming:
+            return
+        self._gpu_warming = True
+        threading.Thread(target=self._gpu_worker, daemon=True).start()
+
+    def _gpu_worker(self):
+        try:
+            gpus = system.list_gpus() or []
+        except Exception:
+            gpus = []
+        if len(gpus) > 1:
+            self._gpus = gpus
+            self._gpu_fp = system.gpu_fingerprint()
+            system.save_gpu_cache(gpus, self._gpu_fp)
+        elif self._gpus is None:
+            self._gpus = ["auto (discrete GPU preferred)"]
+        self._gpu_stale = False
+        self._gpu_warming = False
+        self.gpusChanged.emit()
 
     @Slot(result=str)
     def runnersJson(self):
@@ -331,7 +452,7 @@ class GuiBackend(QObject):
     def mediaDir(self):
         return f"/run/media/{os.environ.get('USER', '')}"
 
-    @Slot(str, result=str)
+    @Slot(result=str)
     def lastDir(self):
         d = store.load_config().get("gui.last_dir", os.path.expanduser("~"))
         return d if os.path.isdir(d) else os.path.expanduser("~")
@@ -399,15 +520,16 @@ class GuiBackend(QObject):
             return "Unknown game."
         if game.get("runner") != "proton":
             return "Translation needs a Proton/Windows game."
-        if game.get("translate", {}).get("enabled") != "1":
+        tr = game.get("translate") or {}
+        if tr.get("enabled") != "1":
             return "Enable translation for this game first (Edit…)."
-        if not setup and not (game.get("translate", {}).get("hook_code") or "").strip():
-            self._pending = ("translate", gid, True)
-            self.emit_prompt("No text hook recorded",
-                             "No text hook is recorded for this game yet.\n"
-                             "Run Setup Text Hooker for translation to pick one?",
-                             ["Setup Text Hooker…", "Cancel"])
-            return "pending"
+        # A hook is "saved" when either a hook code or a picked thread exists.
+        hook_saved = bool((tr.get("hook_code") or "").strip()
+                          or (tr.get("thread") or "").strip())
+        if not setup and not hook_saved:
+            self.logAppended.emit(
+                "No hook recorded for this game — starting Setup Text Hooker.")
+            setup = True
         if not os.path.exists(game.get("path", "")):
             return f"Path no longer exists:\n{game['path']}"
         if self.proc is not None:
@@ -506,10 +628,6 @@ class GuiBackend(QObject):
                 self._set_status("Clearing wedged session…")
                 process.stop_session(game["path"])
                 self.logAppended.emit("cleared.")
-            elif self._last_prompt_title == "No text hook recorded":
-                if btn != 0:
-                    return
-                extra = True
             elif self._last_prompt_title == "Stale game processes":
                 if btn == 0:
                     self.logAppended.emit("cleaned stray processes.")
@@ -590,7 +708,11 @@ class GuiBackend(QObject):
         translating, self._running_translate = self._running_translate, False
         if translating and gid:
             game = store.load_games().get(gid) or {}
-            if game.get("path"):
+            tr = game.get("translate") or {}
+            # Hidden Setup writes no SavedHooks: only harvest when Textractor
+            # was shown (debug) or a manual hook code exists.
+            if game.get("path") and (tr.get("show_hooker") == "1"
+                                     or (tr.get("hook_code") or "").strip()):
                 try:
                     r = subprocess.run(
                         [sys.executable,
@@ -602,8 +724,8 @@ class GuiBackend(QObject):
                             self.logAppended.emit(line)
                 except (OSError, subprocess.SubprocessError):
                     pass
-                self._model.refresh()
-                self.gamesChanged.emit()
+            self._model.refresh()
+            self.gamesChanged.emit()
 
     @Slot(str, result=str)
     def pickThread(self, gid):
@@ -612,47 +734,77 @@ class GuiBackend(QObject):
             return "Unknown game."
         if not process.translate_bridge_ok():
             return "nobridge"
-        self._set_status("Sampling threads… (advance the game text)")
-        import threading
-        threading.Thread(target=self._sample_threads, args=(gid,), daemon=True).start()
+        self._pick_cancel.set()
+        self._pick_cancel = threading.Event()
+        self._set_status("Searching for text threads… (advance the game text)")
+        threading.Thread(target=self._sample_threads, args=(gid,),
+                         daemon=True).start()
         return ""
 
+    @Slot()
+    def cancelPick(self):
+        self._pick_cancel.set()
+
     def _sample_threads(self, gid):
+        """Continuously watch the bridge and stream candidates until the
+        dialog is accepted/cancelled (docs/translate.md)."""
         import time as _time
+        cancel = self._pick_cancel
         game = store.load_games().get(gid, {})
         cur = ((game.get("translate") or {}).get("thread") or "").strip()
         buckets = {}
-        try:
-            sys.path.insert(0, paths.TRANSLATE_DIR)
-            from hook_client import parse_thread, clean_ja
-            import websocket
-            ws = websocket.create_connection("ws://127.0.0.1:6677", timeout=15)
+        sys.path.insert(0, paths.TRANSLATE_DIR)
+        from hook_client import parse_thread, clean_ja
+        import websocket
+
+        state = {"emit": 0.0, "sig": None}
+
+        def snapshot(force=False):
+            if cancel.is_set() or not buckets:
+                return
+            sig = tuple(sorted((k, v["n"], v["last"]) for k, v in buckets.items()))
+            now = _time.time()
+            if sig == state["sig"] or (not force and now - state["emit"] < 0.75):
+                return
+            state["sig"], state["emit"] = sig, now
+            out = [{"num": num, "name": name, "addr": addr, "n": b["n"],
+                    "last": b["last"], "current": cur in (name, str(num))}
+                   for (num, name, addr), b in sorted(buckets.items())]
+            self.threadResults.emit(json.dumps({"threads": out}))
+
+        while not cancel.is_set():
+            try:
+                ws = websocket.create_connection("ws://127.0.0.1:6677", timeout=15)
+            except Exception as e:
+                self.threadResults.emit(json.dumps({"error": str(e)}))
+                cancel.wait(2.0)
+                continue
             ws.settimeout(1.0)
-            end = _time.time() + 20
-            while _time.time() < end:
+            try:
+                while not cancel.is_set():
+                    try:
+                        msg = ws.recv()
+                    except websocket.WebSocketTimeoutException:
+                        snapshot()
+                        continue
+                    except Exception:
+                        break
+                    meta, text = parse_thread(msg)
+                    if meta is None:
+                        continue
+                    ja = clean_ja(text)
+                    if not ja:
+                        continue
+                    key = (meta["number"], meta["name"], meta["addr"])
+                    b = buckets.setdefault(key, {"n": 0, "last": ""})
+                    b["n"] += 1
+                    b["last"] = ja[-120:]
+                    snapshot(force=state["sig"] is None)
+            finally:
                 try:
-                    msg = ws.recv()
+                    ws.close()
                 except Exception:
-                    continue
-                meta, text = parse_thread(msg)
-                if meta is None:
-                    continue
-                ja = clean_ja(text)
-                if not ja:
-                    continue
-                key = (meta["number"], meta["name"], meta["addr"])
-                b = buckets.setdefault(key, {"n": 0, "last": ""})
-                b["n"] += 1
-                b["last"] = ja[-120:]
-            ws.close()
-        except Exception as e:
-            self.threadResults.emit(json.dumps({"error": str(e)}))
-            self._set_status("Idle.")
-            return
-        out = [{"num": num, "name": name, "addr": addr, "n": b["n"],
-                "last": b["last"], "current": cur in (name, str(num))}
-               for (num, name, addr), b in sorted(buckets.items())]
-        self.threadResults.emit(json.dumps({"threads": out}))
+                    pass
         self._set_status("Idle.")
 
     @Slot(str, str)

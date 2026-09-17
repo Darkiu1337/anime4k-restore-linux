@@ -36,16 +36,26 @@ def _exe_of(game_dir):
     return None
 
 
-def resolve_icon(runner, path, gid):
-    """Usable image path for the game (cached), or None for fallback.
-    Sources: exe-embedded icon (icoextract) for proton titles; manifest art,
-    then sibling exe, for rpgmaker/native titles. Cached icons survive
-    unplugged drives (see docs/limits.md)."""
-    os.makedirs(ICON_CACHE, exist_ok=True)
+def cached_icon(gid):
+    """Existing cached icon path, or None. Never extracts — safe to call on
+    the GUI thread (extraction may run icoextract)."""
     for ext in (".png", ".ico"):
         hit = os.path.join(ICON_CACHE, gid + ext)
         if os.path.isfile(hit):
             return hit
+    return None
+
+
+def resolve_icon(runner, path, gid):
+    """Usable image path for the game (cached), or None for fallback.
+    Sources: exe-embedded icon (icoextract) for proton titles; manifest art,
+    then sibling exe, for rpgmaker/native titles. Cached icons survive
+    unplugged drives (see docs/limits.md). Blocking: call off the GUI
+    thread when the icon may be uncached."""
+    os.makedirs(ICON_CACHE, exist_ok=True)
+    hit = cached_icon(gid)
+    if hit:
+        return hit
     src = None
     if runner == "proton" and path.lower().endswith(".exe"):
         src = ("exe", path)
