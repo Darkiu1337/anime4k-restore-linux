@@ -23,4 +23,5 @@ def normalize_edit(data, prev):
     tr = data.setdefault("translate", {})
     tr["hook_mode"] = tr_prev.get("hook_mode", "unknown")
     tr["thread"] = tr_prev.get("thread", "")
+    tr["show_browser"] = tr.get("show_browser") or tr_prev.get("show_browser", "0")
     return data

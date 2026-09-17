@@ -42,6 +42,7 @@ Dialog {
             nameField.text = ""
             trEnable.checked = false
             trHook.text = ""
+            browserCheck.checked = false
         } else {
             var g = JSON.parse(backend.gameData(gid))
             root.runner = g.runner || "proton"
@@ -62,6 +63,7 @@ Dialog {
             var tr = g.translate || {}
             trEnable.checked = tr.enabled === "1"
             trHook.text = tr.hook_code || ""
+            browserCheck.checked = tr.show_browser === "1"
         }
         errLabel.text = ""
         pages.currentIndex = 0
@@ -84,7 +86,8 @@ Dialog {
             prefix_mode: prefixCheck.checked ? "game" : "shared",
             translate: {
                 enabled: (trEnable.checked && root.runner === "proton") ? "1" : "0",
-                hook_code: trHook.text.trim()
+                hook_code: trHook.text.trim(),
+                show_browser: browserCheck.checked ? "1" : "0"
             }
         })
     }
@@ -334,6 +337,11 @@ Dialog {
                             id: trEnable
                             text: "Translate Japanese dialogue via DeepL"
                         }
+                        CheckBox {
+                            id: browserCheck
+                            objectName: "browserCheck"
+                            text: "Show the DeepL browser window (debug)"
+                        }
                         Label { text: "Hook code:" }
                         TextField {
                             id: trHook
@@ -341,7 +349,7 @@ Dialog {
                             placeholderText: "hook code, e.g. HSX10@54DC0:game.exe (optional)"
                         }
                         Label {
-                            text: "Proton/Windows games only. Filter and translation compose in one launch. First run: enable, launch with Translate, pick the text hook in Textractor (Setup shows its window), paste its code here."
+                            text: "Proton/Windows games only. Filter and translation compose in one launch. First run: enable, then run Setup Text Hooker for translation — it opens the picker and records the hook. The DeepL browser stays hidden (headless); tick the box above to watch it."
                             opacity: 0.7
                             wrapMode: Text.Wrap
                             Layout.fillWidth: true

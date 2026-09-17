@@ -8,5 +8,6 @@
   "srclang": "ja",
   "tgtlang": "en",
   "dlx_url": "http://localhost:1188/translate",
-  "cdp_timeout": 30
+  "cdp_timeout": 30,
+  "browser_hidden": true
 }

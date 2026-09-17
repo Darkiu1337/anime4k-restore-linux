@@ -39,8 +39,10 @@ class BraveCDP:
         cmd = [self.config["brave_bin"], "--no-first-run",
                f"--remote-debugging-port={self.port}",
                "--remote-allow-origins=*",
-               f"--user-data-dir={self._profile_dir()}",
-               self.config["deepl_url"]]
+               f"--user-data-dir={self._profile_dir()}"]
+        if self.config.get("browser_hidden", True):
+            cmd.append("--headless=new")
+        cmd.append(self.config["deepl_url"])
         subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(100):
             try:
@@ -77,7 +79,27 @@ class BraveCDP:
         ws = websocket.create_connection(use, timeout=10)
         self._send(ws, "Page.navigate", {"url": self.config["deepl_url"]})
         self._wait_ready(ws)
+        self._activate(ws)
         return ws
+
+    def _activate(self, ws):
+        """DeepL only translates after real user activation, which headless
+        lacks; dispatch a click on the source box (harmless when visible)."""
+        try:
+            r = self._send(ws, "Runtime.evaluate", {"expression":
+                '(() => { const el = document.querySelector("d-textarea");'
+                ' if (!el) return null; const b = el.getBoundingClientRect();'
+                ' return JSON.stringify({x: b.x + b.width / 2, y: b.y + b.height / 2}); })()'})
+            pos = r.get("result", {}).get("value")
+            if not pos:
+                return
+            p = json.loads(pos)
+            for kind in ("mousePressed", "mouseReleased"):
+                self._send(ws, "Input.dispatchMouseEvent",
+                           {"type": kind, "x": p["x"], "y": p["y"],
+                            "button": "left", "clickCount": 1})
+        except Exception:
+            pass
 
     def _send(self, ws, method, params):
         with self.lock:

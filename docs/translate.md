@@ -115,6 +115,17 @@ stock-bridge installs simply keep following the selection). Manual control:
   `wchar_t*`); prebuilt DLL ships as release asset `translate-v2`,
   sha256-verified at install.
 
+## DeepL browser (hidden by default)
+
+Translation drives deepl.com through an isolated Chromium/Brave profile over
+CDP. The browser runs **headless** (`--headless=new`), so no window appears and
+nothing steals focus. Per game, the Translation page has **Show the DeepL
+browser window (debug)** — tick it to watch the automation (remembered per
+game; both Translate and Setup Text Hooker honour it). Globally, set
+`"browser_hidden": false` in `translate/config.json`. The browser is
+single-instance and reused while its debug port is live, so stop the session
+before a visibility change takes effect.
+
 ## Textbox on Hyprland (Float + Click + Top)
 
 * **Click** = click-through. Clicks on the text area fall through to the game

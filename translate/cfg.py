@@ -24,6 +24,7 @@ DEFAULTS = {
     "tgtlang": "en",
     "dlx_url": "http://localhost:1188/translate",
     "cdp_timeout": 30,
+    "browser_hidden": True,
 }
 
 
@@ -40,4 +41,8 @@ def load_config():
         val = cfg.get(key)
         if isinstance(val, str):
             cfg[key] = os.path.expanduser(os.path.expandvars(val))
+    # Per-game override set by the launcher (0 = show the browser, 1 = headless).
+    env = os.environ.get("VN_BROWSER_HIDDEN")
+    if env in ("0", "1"):
+        cfg["browser_hidden"] = env == "1"
     return cfg

@@ -172,13 +172,19 @@ def spawn_textbox(gid=None):
     """Start the textbox backend (single instance, stderr kept). Returns
     (proc, message). proc is None on failure/refusal."""
     argv = [os.path.join(paths.TRANSLATE_DIR, paths.TEXTBOX_PROG), "--start-workers"]
+    env = dict(os.environ)
+    show_browser = False
     try:
         game = store.load_games().get(gid or "")
-        thread = ((game or {}).get("translate") or {}).get("thread", "").strip()
+        tr = (game or {}).get("translate") or {}
+        thread = (tr.get("thread") or "").strip()
         if thread:
             argv += ["--thread", thread]
+        show_browser = tr.get("show_browser") == "1"
     except Exception:
         pass
+    # Per-game: whether the DeepL browser window is visible (hidden = headless).
+    env["VN_BROWSER_HIDDEN"] = "0" if show_browser else "1"
     if textbox_pids():
         return None, "textbox: already running (one instance only)."
     try:
@@ -189,7 +195,8 @@ def spawn_textbox(gid=None):
         logf = subprocess.DEVNULL
     try:
         proc = subprocess.Popen(argv, stdout=logf, stderr=logf,
-                                stdin=subprocess.DEVNULL, start_new_session=True)
+                                stdin=subprocess.DEVNULL, start_new_session=True,
+                                env=env)
         return proc, "textbox: started (stderr -> ~/.cache/anime4k/textbox.log)"
     except (OSError, subprocess.SubprocessError) as e:
         return None, f"textbox: could not open ({e})"
