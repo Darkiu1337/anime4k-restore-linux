@@ -42,12 +42,39 @@ ak_need() {
 # 64-bit vkBasalt hooks 32-bit D3D9 too. Requires a 64-bit prefix; a legacy
 # win32 prefix (new WoW64-unsupported) keeps old WoW64. Opt out with
 # `wow64=0` / --no-wow64. Why: docs/limits.md.
-# True when a Proton build can run 32-bit PE through new WoW64. A bare
-# name/codename (not a local dir) is assumed capable (umu fetches the latest).
+# Resolve the configured `proton` value to an absolute Proton directory:
+# accepts a path or a bare build name (searched in the common
+# compatibilitytools.d dirs). Prints the path, or nothing (return 1) when it
+# cannot be resolved — callers then fall back to the umu-managed UMU-Proton.
+ak_proton_resolve() {
+  local p="$1" d
+  [ -n "$p" ] || return 1
+  if [ -d "$p" ] && { [ -x "$p/proton" ] || [ -x "$p/proton.sh" ]; }; then
+    printf '%s' "$p"
+    return 0
+  fi
+  for d in "$HOME/.local/share/Steam/compatibilitytools.d" \
+           "$HOME/.steam/steam/compatibilitytools.d" \
+           "$HOME/.steam/root/compatibilitytools.d" \
+           "$HOME/.var/app/com.valvesoftware.Steam/data/Steam/compatibilitytools.d" \
+           "/usr/share/steam/compatibilitytools.d" \
+           "/usr/local/share/steam/compatibilitytools.d"; do
+    [ -d "$d/$p" ] || continue
+    if [ -x "$d/$p/proton" ] || [ -x "$d/$p/proton.sh" ]; then
+      printf '%s' "$d/$p"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# True when a Proton build can run 32-bit PE through new WoW64. An explicit
+# value that isn't a local dir is NOT assumed capable: the runner resolves the
+# path first and otherwise falls back to umu-managed (docs/limits.md).
 ak_proton_wow64_capable() {
   local p="$1"
   [ -n "$p" ] || return 0
-  [ -d "$p" ] || return 0
+  [ -d "$p" ] || return 1
   [ -x "$p/files/bin-wow64/wine" ] && return 0
   grep -qa 'PROTON_USE_WOW64' "$p/proton" 2>/dev/null && return 0
   # A 64-bit-only build (no wine64 loader) always runs new WoW64.

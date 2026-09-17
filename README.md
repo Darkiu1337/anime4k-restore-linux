@@ -58,7 +58,9 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
   font; the textbox keeps its own), a Proton picker that scans the common
   `compatibilitytools.d` folders, and a **Refresh GPUs** button. UMU-Proton is
   always available; a selected build without new WoW64 support is flagged and
-  falls back to it at launch.
+  falls back to it at launch. The picker stores an absolute path in `proton`
+  (the installer seeds the verified build); a bare/unknown value is resolved by
+  name or falls back to UMU-Proton.
 * **Background detection**: GPU enumeration and game-icon extraction run off
   the UI thread (never block the window), and the GPU list is cached, keyed by
   a cheap hardware fingerprint that invalidates it automatically when a GPU is

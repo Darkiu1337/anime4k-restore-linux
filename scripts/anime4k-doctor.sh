@@ -94,6 +94,19 @@ else
   echo "note: no compatibilitytools.d yet (umu auto-fetches UMU-Proton on first launch)"
 fi
 unset _CDIR _found _p
+# The configured Proton default must resolve to a real install: a bare display
+# name (or a stale path) would be exported as PROTONPATH and umu would fail to
+# find Proton, so the game never boots (bit us: install.sh seeded the label).
+_cp="$(ak_config_get proton "")"
+if [ -n "$_cp" ]; then
+  if _cpr="$(ak_proton_resolve "$_cp")"; then
+    ok "configured Proton: $_cpr"
+  else
+    bad "config proton '$_cp' does not resolve to a Proton install (pick one in Settings or clear it; otherwise launches fall back to UMU-Proton)"
+  fi
+  unset _cpr
+fi
+unset _cp
 # 32-bit / WoW64 posture (docs/limits.md).
 _w="$(ak_config_get wow64 1)"
 if [ "$_w" = "0" ]; then

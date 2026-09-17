@@ -68,6 +68,21 @@ PREFIX="$(python3 -c "import json; print(json.load(open('$HOME/.config/anime4k/c
 [ -n "$PREFIX" ] || PREFIX="$HOME/.local/share/anime4k/prefixes/default"
 [ -n "${PREFIX_OVERRIDE:-}" ] && PREFIX="$PREFIX_OVERRIDE"
 PROTON="$(python3 -c "import json; print(json.load(open('$HOME/.config/anime4k/config.json')).get('proton', ''))" 2>/dev/null || true)"
+# Resolve a path or bare build name to an absolute dir; otherwise fall back to
+# umu-managed. A bare label would otherwise be exported as PROTONPATH and umu
+# would fail to find Proton (game never boots, bridge stays down).
+if [ -n "$PROTON" ] && command -v ak_proton_resolve >/dev/null 2>&1; then
+  _raw="$PROTON"
+  if _resolved="$(ak_proton_resolve "$PROTON")"; then
+    PROTON="$_resolved"
+    [ "$PROTON" != "$_raw" ] && echo "proton: resolved '$_raw' -> '$PROTON'" >&2
+  else
+    echo "warning: configured Proton '$_raw' not found — using umu-managed UMU-Proton" >&2
+    PROTON=""
+    unset PROTONPATH
+  fi
+  unset _raw _resolved
+fi
 if [ -n "$WOW64_FLAG" ]; then
   WOW64="$WOW64_FLAG"
 elif command -v ak_config_get >/dev/null 2>&1; then

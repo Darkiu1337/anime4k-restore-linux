@@ -128,6 +128,21 @@ case "$PROTON_FLAG" in
   "") PROTON="$(ak_config_get proton "")" ;;
   *) PROTON="$PROTON_FLAG" ;;
 esac
+# Resolve a path or bare build name to an absolute dir; otherwise fall back to
+# umu-managed. A bare label would otherwise be exported as PROTONPATH and umu
+# would fail to find Proton (game never boots).
+if [ -n "$PROTON" ]; then
+  _raw="$PROTON"
+  if _resolved="$(ak_proton_resolve "$PROTON")"; then
+    PROTON="$_resolved"
+    [ "$PROTON" != "$_raw" ] && ak_log "proton: resolved '$_raw' -> '$PROTON'"
+  else
+    ak_log "warning: configured Proton '$_raw' not found — using umu-managed UMU-Proton"
+    PROTON=""
+    unset PROTONPATH
+  fi
+  unset _raw _resolved
+fi
 # WoW64: flag > config (default on) — docs/limits.md.
 if [ -n "$WOW64_FLAG" ]; then WOW64="$WOW64_FLAG"; else WOW64="$(ak_config_get wow64 1)"; fi
 # A selected Proton without new WoW64 support can't serve 32-bit titles: warn

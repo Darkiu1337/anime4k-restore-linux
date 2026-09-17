@@ -44,7 +44,18 @@ Dialog {
             if (list[i].value === root.proton) { idx = i; break }
         }
         if (idx < 0 && root.proton !== "") {
-            // Keep a configured value the scan did not find (e.g. a bare name).
+            // Normalize a bare build name to its absolute path (older
+            // installer seeded the label, which broke PROTONPATH).
+            for (var k = 0; k < list.length; k++) {
+                if (list[k].label === root.proton) {
+                    root.proton = list[k].value
+                    idx = k
+                    break
+                }
+            }
+        }
+        if (idx < 0 && root.proton !== "") {
+            // Keep a configured value the scan did not find.
             list = list.concat([{ "label": root.proton + "  (not detected)",
                                   "value": root.proton, "wow64": true }])
             idx = list.length - 1

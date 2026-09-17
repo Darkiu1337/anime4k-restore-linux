@@ -692,10 +692,14 @@ install_cachyos_proton() {
 }
 seed_proton_default() {
   # Point the config default at the verified build, but never override an
-  # existing user choice and only after a successful install.
-  python3 - "$HOME/.config/anime4k/config.json" <<'EOF'
+  # existing user choice and only after a successful install. The value is the
+  # ABSOLUTE PATH (the runner exports it as PROTONPATH); a bare display name
+  # would make umu fail to find Proton (see docs/translate.md / HANDOFF).
+  python3 - "$HOME/.config/anime4k/config.json" "$CACHYOS_PROTON_DIR" <<'EOF'
 import json, os, sys
-p = sys.argv[1]
+p, proton = sys.argv[1], sys.argv[2]
+if not proton or not os.path.isdir(proton):
+    sys.exit(0)
 try:
     d = json.load(open(p))
     if not isinstance(d, dict):
@@ -703,10 +707,10 @@ try:
 except (OSError, ValueError):
     d = {}
 if not d.get("proton"):
-    d["proton"] = "Proton-CachyOS Latest"
+    d["proton"] = proton
     os.makedirs(os.path.dirname(p), exist_ok=True)
     json.dump(d, open(p, "w"), indent=2)
-    print("seeded config proton default: Proton-CachyOS Latest")
+    print("seeded config proton default: " + os.path.basename(proton))
 EOF
 }
 if [ -x "$CACHYOS_PROTON_DIR/proton" ]; then
