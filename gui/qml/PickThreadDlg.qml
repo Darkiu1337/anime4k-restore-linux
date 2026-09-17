@@ -14,14 +14,15 @@ Dialog {
     property string gid: ""
     property var threads: []
     property bool sampling: false
-    property int waited: 0
+    property string selectedKey: ""
 
     // waitForBridge: keep retrying until the game/bridge comes up (used by
-    // Setup, which launches the game just before opening this).
+    // Setup, which launches the game just before opening this). Searching is
+    // continuous and only ends when a thread is accepted or the dialog closes.
     function start(gid, waitForBridge) {
         root.gid = gid
         root.threads = []
-        root.waited = 0
+        root.selectedKey = ""
         root.open()
         var r = backend.pickThread(gid)
         if (r === "nobridge") {
@@ -37,8 +38,20 @@ Dialog {
             statusLabel.text = r
             root.sampling = false
         } else {
-            statusLabel.text = "Sampling threads… (advance the game text)"
+            statusLabel.text = "Searching for text threads… (advance the game text)"
             root.sampling = true
+        }
+    }
+
+    function selectKey(key) {
+        if (key === "")
+            return
+        for (var i = 0; i < root.threads.length; ++i) {
+            var t = root.threads[i]
+            if ((t.follow ? "*" : t.name) === key) {
+                threadList.currentIndex = i
+                return
+            }
         }
     }
 
@@ -47,17 +60,10 @@ Dialog {
         interval: 2000
         repeat: true
         onTriggered: {
-            root.waited += interval / 1000
-            if (root.waited > 90) {
-                stop()
-                statusLabel.text = "Still no text bridge after 90s.\n"
-                    + "Is the game running with text advancing?"
-                return
-            }
             var r = backend.pickThread(root.gid)
             if (r === "") {
                 stop()
-                statusLabel.text = "Sampling threads… (advance the game text)"
+                statusLabel.text = "Searching for text threads… (advance the game text)"
                 root.sampling = true
             } else if (r !== "nobridge") {
                 stop()
@@ -67,7 +73,10 @@ Dialog {
         }
     }
 
-    onClosed: bridgeWait.stop()
+    onClosed: {
+        bridgeWait.stop()
+        backend.cancelPick()
+    }
 
     Connections {
         target: backend
@@ -75,25 +84,29 @@ Dialog {
             if (!root.visible)
                 return
             var data = JSON.parse(payload)
-            root.sampling = false
             if (data.error) {
-                statusLabel.text = "Sampling failed: " + data.error
+                statusLabel.text = "Waiting for the text bridge…"
+                root.sampling = true
                 return
             }
-            if (!data.threads || data.threads.length === 0) {
-                statusLabel.text = "No tagged threads seen in 20s.\nAdvance the in-game text and retry."
+            if (!data.threads || data.threads.length === 0)
                 return
-            }
+            var keep = root.selectedKey
             var rows = data.threads.slice()
             rows.push({num: "*", name: "", addr: "", n: 0,
-                       last: "Follow Textractor's own selection (*)", current: false,
-                       follow: true})
+                       last: "Follow Textractor's own selection (fallback; needs Textractor shown)",
+                       current: false, follow: true})
             root.threads = rows
-            statusLabel.text = data.threads.length + " threads — pick the text hook:"
+            root.sampling = false
+            if (keep !== "")
+                root.selectKey(keep)
+            statusLabel.text = data.threads.length + " thread(s) — pick the text hook"
+                + " (list keeps updating as you advance)"
         }
     }
 
     onAccepted: {
+        backend.cancelPick()
         var t = root.threads[threadList.currentIndex]
         if (t)
             backend.saveThread(root.gid, t.follow ? "" : t.name)
@@ -103,6 +116,14 @@ Dialog {
         spacing: 10
         width: availableWidth
         height: availableHeight
+
+        // Underline below the dialog title (matches the top bar divider).
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 1
+            color: root.palette.windowText
+            opacity: 0.25
+        }
 
         Label {
             id: statusLabel
@@ -117,14 +138,24 @@ Dialog {
             Layout.fillHeight: true
             clip: true
             model: root.threads
+            onCurrentIndexChanged: {
+                var ok = root.standardButton(Dialog.Ok)
+                if (ok)
+                    ok.enabled = currentIndex >= 0
+            }
             delegate: ItemDelegate {
                 width: threadList.width
-                onClicked: threadList.currentIndex = index
+                onClicked: {
+                    threadList.currentIndex = index
+                    root.selectedKey = modelData.follow ? "*" : modelData.name
+                }
                 contentItem: ColumnLayout {
                     spacing: 2
                     Label {
                         text: modelData.follow ? modelData.last
-                              : modelData.name + "  (#" + modelData.num + ", " + modelData.n + " lines)"
+                              : modelData.name + "  (#" + modelData.num
+                                + (modelData.addr ? ", @" + modelData.addr : "")
+                                + ", " + modelData.n + " lines)"
                                 + (modelData.current ? "  ← current" : "")
                         font.bold: !modelData.follow
                         elide: Text.ElideRight

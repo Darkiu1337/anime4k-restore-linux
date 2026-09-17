@@ -60,7 +60,9 @@ def build_command(game):
 
 def build_translate_command(game, gid, setup=False):
     """Argv for a translation session (filter + DeepL in one launch).
-    setup=True shows the Textractor window for first-time thread picking."""
+    setup=True opens the in-app Text Hooker picker (Textractor stays hidden);
+    translate.show_hooker="1" reveals Textractor's window (debug)."""
+    tr = game.get("translate") or {}
     argv = [os.path.join(paths.TRANSLATE_DIR, "vn-launch.sh"),
             "--exe", game["path"], "--gameid", gid,
             "--filter", game.get("variant", "L")]
@@ -70,9 +72,11 @@ def build_translate_command(game, gid, setup=False):
         argv.append("--wow64")
     if game.get("lang"):
         argv += ["--lang", game["lang"]]
-    hook = (game.get("translate") or {}).get("hook_code", "").strip()
+    hook = (tr.get("hook_code") or "").strip()
     if hook:
         argv += ["--hook-code", hook]
     if setup:
         argv += ["--setup"]
+        if tr.get("show_hooker") == "1":
+            argv += ["--show-hooker"]
     return argv

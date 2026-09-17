@@ -20,10 +20,12 @@ def _launch(args):
         return 1
     tr = game.get("translate") or {}
     if game.get("runner", "proton") == "proton" and tr.get("enabled") == "1":
-        setup = not tr.get("hook_code", "").strip()
+        hook_saved = bool((tr.get("hook_code") or "").strip()
+                          or (tr.get("thread") or "").strip())
+        setup = not hook_saved
         if setup:
             print(f"no hook recorded for '{args.gid}': launching SETUP "
-                  "(pick the story thread in Textractor)")
+                  "(pick the story thread in the in-app picker)")
         argv = commands.build_translate_command(game, args.gid, setup=setup)
     else:
         argv = commands.build_command(game)

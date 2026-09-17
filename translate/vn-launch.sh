@@ -4,14 +4,15 @@
 # Filter (Anime4K Restore via vkBasalt) is applied in-process when --filter is
 # given, by sourcing anime4k-lib.sh — the same mechanism as proton-anime4k.sh,
 # so filter + translation compose in one launch.
-# Usage: vn-launch.sh --game ID [--setup] [--filter VARIANT|off] [--dry-run]
-#                      | --exe PATH --gameid ID [--lang LOCALE] [--hook-code CODE] [--setup] [--filter ...] [--dry-run]
+# Usage: vn-launch.sh --game ID [--setup] [--show-hooker] [--filter VARIANT|off] [--dry-run]
+#                      | --exe PATH --gameid ID [--lang LOCALE] [--hook-code CODE] [--setup] [--show-hooker] [--filter ...] [--dry-run]
 #                      | --stop ID | --stop-exe PATH | --status | --list
 #   --exe bypasses the games registry (used by anime4k GUI/TUI: games.json is
 #     the single registry there). --gameid/--lang default sanely with --exe.
 #     --hook-code seeds Textractor's SavedHooks so the recorded hook
 #     auto-inserts at attach (no manual Add-hook).
-#   --setup  Setup mode: Textractor window VISIBLE (first-time thread picking).
+#   --setup  Setup mode: opens the in-app Text Hooker picker. Textractor stays
+#            HIDDEN; --show-hooker reveals Textractor's window (debug).
 #            Default (play mode): Textractor HIDDEN (style 0), game normal.
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -23,7 +24,7 @@ if [ -f "$AK_LIB" ]; then
   # shellcheck disable=SC1090
   source "$AK_LIB"
 fi
-GAME=""; SETUP=0; CMD="launch"; FILTER="off"; DRYRUN=0
+GAME=""; SETUP=0; SHOW_HOOKER=0; CMD="launch"; FILTER="off"; DRYRUN=0
 EXE_FLAG=""; GAMEID_FLAG=""; LANG_FLAG=""; HOOKCODE_FLAG=""; WOW64_FLAG=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -33,6 +34,7 @@ while [ $# -gt 0 ]; do
     --lang) LANG_FLAG="$2"; shift 2 ;;
     --hook-code) HOOKCODE_FLAG="$2"; shift 2 ;;
     --setup) SETUP=1; shift ;;
+    --show-hooker) SHOW_HOOKER=1; shift ;;
     --filter) FILTER="$2"; shift 2 ;;
     --dry-run) DRYRUN=1; shift ;;
     --stop) GAME="$2"; CMD="stop"; shift 2 ;;
@@ -170,8 +172,14 @@ if new_games != raw("SavedGames.txt"):
         f.write(new_games)
 PYEOF
 }
-# Hooker hidden in play mode, visible in setup; game always normal.
-if [ "$SETUP" = "1" ]; then HSTYLE=1; MODE="setup (Textractor visible)"; else HSTYLE=0; MODE="play (Textractor hidden)"; fi
+# Hooker hidden by default (play AND setup); --show-hooker reveals it (debug).
+if [ "$SETUP" = "1" ] && [ "$SHOW_HOOKER" = "1" ]; then
+  HSTYLE=1; MODE="setup (Textractor visible)"
+elif [ "$SETUP" = "1" ]; then
+  HSTYLE=0; MODE="setup (Textractor hidden, pick in-app)"
+else
+  HSTYLE=0; MODE="play (Textractor hidden)"
+fi
 GDIR="$(dirname "$EXE")"
 to_winpath() { python3 -c "
 import sys

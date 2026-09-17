@@ -25,5 +25,11 @@ def normalize_edit(data, prev):
     tr = data.setdefault("translate", {})
     tr["hook_mode"] = tr_prev.get("hook_mode", "unknown")
     tr["thread"] = tr_prev.get("thread", "")
+    # hook_code/all_hooks are no longer edited in the wizard; keep whatever the
+    # session or the TUI recorded so an edit never wipes them.
+    tr["hook_code"] = tr.get("hook_code") or tr_prev.get("hook_code", "")
+    if not tr.get("all_hooks") and tr_prev.get("all_hooks"):
+        tr["all_hooks"] = tr_prev["all_hooks"]
     tr["show_browser"] = tr.get("show_browser") or tr_prev.get("show_browser", "0")
+    tr["show_hooker"] = tr.get("show_hooker") or tr_prev.get("show_hooker", "0")
     return data
