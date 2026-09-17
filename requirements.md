@@ -14,6 +14,7 @@ from upstream docs — confirmations welcome.
 | vkBasalt | AUR `vkbasalt`, else automated source build [verified: source build] | `vkbasalt`, else source build | `vkBasalt`, else source build | the filter runtime; `install.sh` handles both; verify with `anime4k doctor` |
 | mangohud | `mangohud` [verified] | `mangohud` | `mangohud` | fps cap + overlay |
 | vulkan-tools | `vulkan-tools` [verified] | `vulkan-tools` | `vulkan-tools` | optional: device list, `vkcube` test |
+| pciutils | `pciutils` [verified] | `pciutils` | `pciutils` | optional: `lspci` fallback for GPU detection when `/sys/class/drm` is unavailable |
 | icoextract | `icoextract` [verified] | `python3-icoextract` | `pip install icoextract` | game-icon extraction for the GUI |
 | git | `git` [verified] | `git` | `git` | cloning this repo |
 

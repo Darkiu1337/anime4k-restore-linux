@@ -8,24 +8,24 @@ Luna-style textbox — composed with the Restore filter in a single launch.
 
 1. **Enable** per game: GUI game wizard/edit (Translation page) or
    `anime4k edit` → `translate`. Proton/Windows games only.
-2. **First run (Setup Text Hooker for translation)**: this GUI button (or
-   `anime4k` launch, which auto-uses setup while no hook is recorded)
-   launches the game and opens the Text Hooker picker. Textractor opens
-   **already attached** with the saved-thread list loaded, and the textbox
-   opens alongside following Textractor's selection — so you see live
-   translation while picking. The picker waits for the bridge to come up
-   (the game must be running), then samples 20s of live threads. Advance the
-   game text, then either:
-   - click the story thread in the picker (name + last line) — no Textractor
-     interaction at all — or
-   - click the story thread in Textractor and press **Save hook(s)** — the
-     hook code is harvested into the game entry automatically at session
-     end (nothing is copied by hand).
-   Either way the chosen thread/hook is stored in the game entry.
-3. **Daily play**: `Translate` (Textractor hidden — the only difference from
-   Setup; the recorded hook auto-inserts all the same). The textbox opens
-   with it, following the recorded thread. It toggles EN-only / JA+EN. The
+2. **First run (Setup Text Hooker for translation)**: this GUI button — or
+   just pressing **Translate** when no hook is saved yet, which auto-runs
+   Setup — launches the game and opens the Text Hooker picker. **Textractor
+   stays hidden**; our window is the only interface. The picker waits for the
+   bridge (the game must be running), then listens continuously and lists
+   every text thread it sees (name, #num, hook address, line count, last
+   line). Advance the game text, then click the story thread — that stores it
+   as the game's `translate.thread` and daily play follows it by name. (A
+   saved `hook_code` works the same way, but the wizard no longer exposes it —
+   paste one via the TUI/JSON if you ever have it.) If Textractor's auto-hooks
+   find nothing, tick **Show Textractor during Setup (debug)** in the wizard
+   and do the hook ladder manually. Both debug toggles live under a **Debug**
+   heading on the Translation page and are only enabled once translation is on.
+3. **Daily play**: `Translate` (picker never opens; the recorded thread is
+   followed). The textbox opens with it. It toggles EN-only / JA+EN. The
    standalone Textbox button just re-opens the reader onto a live session.
+   The **Setup Text Hooker for translation** button stays available to change
+   the hook.
 4. **End**: Stop in the UI (or Ctrl-C); `--stop` also drops the wineserver
    so the next launch boots fresh. Stop ends the whole session: game hooks,
    textbox backend, and its isolated DeepL browser (a backend left running
@@ -51,8 +51,10 @@ untranslated by design.
 
 The v2 bridge tags every sentence with thread number, hook address, and
 hook name (stable across sessions). The Text Hooker picker (opened by Setup
-Text Hooker for translation, waiting for the bridge first) samples 20s of
-live traffic and lists candidates with their last line; choosing one stores it
+Text Hooker for translation, waiting for the bridge first) **listens
+continuously**: it streams candidates with their last line as they appear and
+keeps updating the list while the game runs, until you pick one or cancel —
+there is no sampling timeout. Choosing one stores it
 as the game's `translate.thread` and the Textbox/hook_client then follow
 that thread by name (falling back to Textractor's selection if unset —
 stock-bridge installs simply keep following the selection). Manual control:
@@ -126,6 +128,18 @@ game; both Translate and Setup Text Hooker honour it). Globally, set
 single-instance and reused while its debug port is live, so stop the session
 before a visibility change takes effect.
 
+Headless is hidden from you but detectable by DeepL, which shows its
+`clearance.deepl.com` "Checking if the connection is secure" widget; that
+widget steals focus but **cannot** stop the translator: the launcher masks the
+headless markers (a normal desktop `--user-agent`, no
+`AutomationControlled` feature), renders on the real GPU (`--enable-gpu`;
+headless otherwise forces SwiftShader) with timers unthrottled, and sets the
+source text plus dispatches `input` events **without relying on focus**, so
+DeepL translates underneath the overlay. (Focus-based typing used to trigger
+a per-call page reload — that latency regression is gone: steady state is a
+few hundred ms.) If DeepL ever blocks that too, flip
+`browser_hidden`/the checkbox (visible = a real window) as the escape hatch.
+
 It keeps exactly **one** DeepL tab: the launcher reuses an existing tab,
 closes any extras, and purges stale session state before a fresh start, so a
 new session never reopens a pile of DeepL pages. On Stop — and when the
@@ -143,10 +157,20 @@ and the real browser profile is never read or modified.
   click-through is a bars-only surface input mask; `Qt.WindowTransparentForInput`
   is deliberately never set — while it is set, Qt silently drops every mask
   update. Both facts verified at the Wayland protocol level.)
-* **Float** is enforced unconditionally (an overlay must never tile): a
-  Hyprland poller float-enables the window at map and re-floats it if
-  something tiles it, independent of Top. No config change needed — works on
-  any Hyprland ≥ 0.55 the app is run from.
+* **Float** is enforced unconditionally (an overlay must never tile). Before
+  the window maps, `translate/placement.py` installs a Hyprland window rule
+  (`hyprctl eval`, title `^vn-translate$`: `float`, `persistent_size`, and the
+  saved position) so the first map is already floating at the last geometry —
+  no tiled flash. A ~1s poller still re-floats it if something tiles it later,
+  independent of Top. No config change needed (Hyprland ≥ 0.55).
+* **Geometry is compositor-agnostic.** The QML window starts hidden, so
+  `restore_state()` runs before the first map and Qt's `saveGeometry` /
+  `restoreGeometry` restores the size on any compositor (X11, KDE, GNOME, …).
+  Wayland gives clients no way to set their position, so on Hyprland the
+  adapter also captures the compositor's `at`/`size` on close
+  (`compositor_geometry` in the textbox settings) and feeds it back through
+  the float rule; on compositors without a rule API (e.g. GNOME) the position
+  stays compositor-chosen — size is still restored.
 * **Top** = pinned to the box's workspace, above everything there. Qt's
   stay-on-top hint is ignored by Hyprland, so a ~1s poller enforces it: pinned
   while Top is on *and* you're on the box's workspace, unpinned everywhere
@@ -161,18 +185,11 @@ and the real browser profile is never read or modified.
   title everywhere; the poller + map-time unpin neutralize it. Corner
   rounding follows the compositor (`decoration:rounding`, Style override
   available).
-* Optional Hyprland rule to float it at map time (avoids the brief tiled
-  moment before the app's poller floats it; lua syntax, Hyprland ≥ 0.55):
-  ```lua
-  hl.window_rule({
-    name = "vn-translate-overlay",
-    match = { title = "^vn-translate$" },
-    float = true,
-  })
-  ```
-  (The app manages float + pin itself; add `pin = true` only if you want the
-  box on *every* workspace regardless of Top.)
-  Verified on Hyprland 0.56.2 + Qt 6.11.
+
+The float rule is installed by the app itself (see above), so the manual rule
+is no longer needed. `placement.py` also ships a `sway` backend and a generic
+no-op fallback, so the same code path works on other compositors (adding
+KWin/GNOME backends is a drop-in). Verified on Hyprland 0.56.2 + Qt 6.11.
 
 ## Textbox style
 
@@ -218,6 +235,18 @@ distro. `install.sh --check-only` audits the translate deps too.
 * Proton/Windows games only (hook injection needs Wine + one shared session).
 * One live session at a time (shared prefix design).
 * The Text Hooker needs live text: run Setup Text Hooker for translation and
-  advance the game while it samples. Thread picking by name needs the v2
-  bridge — stock installs follow Textractor's selection instead.
+  advance the game while it listens (it keeps listening until you pick or
+  cancel). Thread picking by name needs the v2 bridge — stock installs follow
+  Textractor's selection instead.
 * Sentence-MT quirks: speaker names romanize inconsistently across lines.
+* DLX (`deepl_dlx.py`, `:1188`) is an **opt-in, experimental** offline
+  fallback. It is off by default (`"dlx_enabled": false`); when off, a DeepL
+  browser failure reports a short "DeepL unavailable" line instead of
+  attempting the local server.
+* **Clean up after tests.** A session that isn't stopped cleanly leaves
+  orphaned Wine/Proton services under `systemd --user` (`services.exe`,
+  `winedevice.exe`, `svchost.exe`, `plugplay.exe`, `explorer.exe /desktop`,
+  `rpcss.exe`, `tabtip.exe`) and stale `/tmp/.wine-*/server-*` lock dirs. Kill
+  them after testing (`pgrep -af 'C:\windows'`, then `kill`/`kill -9`) and
+  remove the stale wine dirs once `pgrep -x wineserver` is empty, so the next
+  launch starts clean.

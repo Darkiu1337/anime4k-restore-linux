@@ -55,9 +55,14 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
   style and follow your desktop colour scheme (e.g. Omarchy's KDE theme),
   light or dark.
 * **Settings** (top bar): a per-app GUI font (defaults to your environment
-  font; the textbox keeps its own) and a Proton picker that scans the common
-  `compatibilitytools.d` folders. UMU-Proton is always available; a selected
-  build without new WoW64 support is flagged and falls back to it at launch.
+  font; the textbox keeps its own), a Proton picker that scans the common
+  `compatibilitytools.d` folders, and a **Refresh GPUs** button. UMU-Proton is
+  always available; a selected build without new WoW64 support is flagged and
+  falls back to it at launch.
+* **Background detection**: GPU enumeration and game-icon extraction run off
+  the UI thread (never block the window), and the GPU list is cached, keyed by
+  a cheap hardware fingerprint that invalidates it automatically when a GPU is
+  added, removed, or swapped.
 * **Game detection**: engine sniffing pre-selects the runner.
 * **Frame caps everywhere**: DXVK on Proton, MangoHud elsewhere; optional
   overlay readout.
@@ -68,7 +73,9 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
 * **VN translation** (Proton): per-game DeepL toggle — hooked Japanese dialogue
   translated live into a Luna-style textbox; composes with the filter in one
   launch. **Setup Text Hooker for translation** runs the game and opens an
-  in-app text-hook picker. Details: `docs/translate.md`.
+  in-app text-hook picker; **Textractor stays hidden** (our window is the only
+  interface). Pressing **Translate** with no hook saved auto-runs Setup; once
+  a thread is picked, Translate plays directly. Details: `docs/translate.md`.
 
 ## Use cases
 
@@ -93,8 +100,8 @@ Details: `requirements.md`. One shared Wine prefix lives under
 translation support) into `~/.local/bin` and offers to add it to `PATH`.
 
 In the GUI, the top bar has **Settings** (Wine prefix, Proton picker, per-app
-font, vkBasalt layer dir) and **Quit**; everything else is per-game in the
-wizard and the game list.
+font, GPU-list refresh, vkBasalt layer dir) and **Quit**; everything else is
+per-game in the wizard and the game list.
 
 ## Troubleshooting
 
