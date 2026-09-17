@@ -4,7 +4,7 @@
 # Usage: fetch-vendor.sh [--dir DIR] [--bridge fixed|stock] [--dlx] [--all]
 #   default: Textractor x86 bundle + websocket x86 (+ x64 if --all), no DLX.
 #   --bridge fixed: fetch the hardened bridge from the anime4k release asset
-#     (TRANSLATE_RELEASE_TAG, default: translate-v1); falls back to stock.
+#     (TRANSLATE_RELEASE_TAG, default: translate-v2); falls back to stock.
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 VDIR="${VENDOR_DIR:-$HERE/vendor}"
@@ -20,16 +20,24 @@ while [ $# -gt 0 ]; do
   esac
 done
 mkdir -p "$VDIR"
-dl() { # dl <url> <sha256> <dest>
+# dl <url> <sha256|""> <dest>: empty sha means unverified (fallback only).
+dl() {
   local url="$1" sha="$2" dest="$3" tmp="$3.dl-tmp"
-  if [ -f "$dest" ] && [ "$(sha256sum "$dest" | cut -d' ' -f1)" = "$sha" ]; then
+  if [ -f "$dest" ] && { [ -z "$sha" ] || [ "$(sha256sum "$dest" | cut -d' ' -f1)" = "$sha" ]; }; then
     echo "cached: $(basename "$dest")"
     return 0
   fi
   echo "fetching $(basename "$dest")…"
-  curl -fL --retry 3 -o "$tmp" "$url"
-  [ "$(sha256sum "$tmp" 2>/dev/null | cut -d' ' -f1)" = "$sha" ] || { echo "checksum MISMATCH: $dest" >&2; rm -f "$tmp"; return 1; }
+  curl -fL --retry 3 -o "$tmp" "$url" || { rm -f "$tmp"; return 1; }
+  if [ -n "$sha" ]; then
+    [ "$(sha256sum "$tmp" 2>/dev/null | cut -d' ' -f1)" = "$sha" ] \
+      || { echo "checksum MISMATCH: $dest" >&2; rm -f "$tmp"; return 1; }
+  fi
   mv "$tmp" "$dest"
+}
+gh_latest_tag() {
+  curl -sL -o /dev/null -w '%{url_effective}' --max-time 30 \
+    "https://github.com/$1/releases/latest" | sed 's|.*/tag/||'
 }
 
 # Pins (bump together with the sha256 below).
@@ -46,7 +54,28 @@ DLX_TAG="${DLX_TAG:-v1.2.4}"
 DLX_URL="https://github.com/OwO-Network/DLX/releases/download/${DLX_TAG}/deeplx_linux_amd64"
 DLX_SHA="eb4b99aec7b1b20bbbebc7e9a780fd970342f0e53d45999608d9d82a5d794dff"
 
-dl "$TRX_URL" "$TRX_SHA" "$VDIR/$TRX_ZIP"
+# Textractor: pinned asset first; if upstream renamed/moved it, resolve the
+# latest release asset (unverified — warn loudly).
+if ! dl "$TRX_URL" "$TRX_SHA" "$VDIR/$TRX_ZIP"; then
+  echo "warning: pinned Textractor asset unavailable ($TRX_ZIP @ $TRX_TAG)" >&2
+  _tag="$(gh_latest_tag Chenx221/Textractor || true)"
+  _asset=""
+  if [ -n "$_tag" ]; then
+    _asset="$(curl -sL --max-time 30 \
+      "https://github.com/Chenx221/Textractor/releases/expanded_assets/${_tag}" \
+      | grep -oE 'Textractor[^"'"'"'/ ]*\.zip' | sort -u | tail -n1)"
+  fi
+  if [ -n "$_asset" ]; then
+    echo "  falling back to latest asset: $_asset (checksum UNVERIFIED)" >&2
+    dl "https://github.com/Chenx221/Textractor/releases/download/${_tag}/${_asset}" "" "$VDIR/$_asset" \
+      || { echo "error: Textractor download failed" >&2; exit 1; }
+    TRX_ZIP="$_asset"
+  else
+    echo "error: no Textractor release asset found (network offline or upstream changed)" >&2
+    exit 1
+  fi
+  unset _tag _asset
+fi
 dl "$WS86_URL" "$WS86_SHA" "$VDIR/textractor_websocket_x86.zip"
 [ "${ALL:-0}" = "1" ] && dl "$WS64_URL" "$WS64_SHA" "$VDIR/textractor_websocket_x64.zip"
 [ "$DLX" = "1" ] && { dl "$DLX_URL" "$DLX_SHA" "$VDIR/deeplx_linux_amd64"; chmod +x "$VDIR/deeplx_linux_amd64"; }
@@ -67,14 +96,26 @@ fi
 # Extract into the layout install-textractor.sh consumes (idempotent).
 if command -v python3 >/dev/null 2>&1; then
 python3 - "$VDIR" <<'PYEOF'
-import sys, zipfile, os
+import glob
+import os
+import sys
+import zipfile
+
 vdir = sys.argv[1]
+
+
 def unzip(path, dest):
     if os.path.exists(dest):
         return
     with zipfile.ZipFile(path) as z:
         z.extractall(dest)
-unzip(os.path.join(vdir, "Textractor_260801.zip"), os.path.join(vdir, "textractor-full"))
+
+
+# Any capitalized Textractor_*.zip (pinned or latest-release fallback). Lowercase
+# websocket bundles never match this pattern.
+for trx in sorted(glob.glob(os.path.join(vdir, "Textractor*.zip"))):
+    unzip(trx, os.path.join(vdir, "textractor-full"))
+    break
 for name in ("textractor_websocket_x86.zip", "textractor_websocket_x64.zip"):
     p = os.path.join(vdir, name)
     if os.path.exists(p):

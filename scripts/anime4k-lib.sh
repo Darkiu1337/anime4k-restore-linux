@@ -19,16 +19,20 @@ ak_config_get() {
   python3 -c "import json,sys; print(json.load(open('$ANIME4K_CONFIG')).get('$1', '$2'))" 2>/dev/null || printf '%s' "$2"
 }
 
-# Shader dir: explicit env wins, then deployed XDG dir, then repo copy (dev).
+# Shader dir: explicit env wins, then config shader_dir, then the deployed XDG
+# dir, then the repo copy (dev). docs/limits.md.
 _ANIME4K_XDG_SHADERS="$HOME/.local/share/gamescope/reshade/Shaders"
+_ANIME4K_CFG_SHADERS="$(ak_config_get shader_dir "")"
 if [ -n "${ANIME4K_SHADER_DIR:-}" ]; then
   : # kept as-is
+elif [ -n "$_ANIME4K_CFG_SHADERS" ] && [ -d "$_ANIME4K_CFG_SHADERS" ]; then
+  ANIME4K_SHADER_DIR="$_ANIME4K_CFG_SHADERS"
 elif [ -d "$_ANIME4K_XDG_SHADERS" ]; then
   ANIME4K_SHADER_DIR="$_ANIME4K_XDG_SHADERS"
 else
   ANIME4K_SHADER_DIR="$ANIME4K_ROOT/shaders"
 fi
-unset _ANIME4K_XDG_SHADERS
+unset _ANIME4K_XDG_SHADERS _ANIME4K_CFG_SHADERS
 
 ak_die() { echo "error: $*" >&2; exit 1; }
 ak_log() { echo "anime4k: $*" >&2; }
@@ -300,6 +304,54 @@ ak_vkbasalt_env() {
   export VKBASALT_CONFIG_FILE="$conf"
 }
 
+# --- Textractor provisioning (canonical dir + per-prefix symlink) -----------
+# One install per machine under ~/.local/share/anime4k/textractor; each prefix's
+# drive_c/Textractor is a symlink to it. The extension set is ALWAYS forced
+# bridge-only: Textractor otherwise loads its six stock extensions (Google
+# Translate, ...) when SavedExtensions.txt is missing, which stalls the
+# sentence pipeline (docs/translate.md).
+ak_textractor_home() {
+  printf '%s' "${ANIME4K_TEXTTRACTOR_HOME:-$HOME/.local/share/anime4k/textractor}"
+}
+ak_textractor_x86() { printf '%s/x86' "$(ak_textractor_home)"; }
+
+ak_textractor_bridge_only() { # <x86-dir>
+  local x86="${1:-$(ak_textractor_x86)}"
+  [ -d "$x86" ] || return 0
+  printf 'textractor_websocket_x86>' > "$x86/SavedExtensions.txt"
+}
+
+# Ensure Textractor is provisioned in <prefix> and bridge-only is enforced.
+# A legacy per-prefix install is used as-is (no vendor needed); only a prefix
+# with no Textractor triggers canonical provisioning. Prints the Textractor.exe
+# path ("" when it could not be provisioned).
+ak_textractor_ensure() { # <prefix> [bridge]
+  local prefix="$1" bridge="${2:-fixed}"
+  [ -n "$prefix" ] || return 1
+  local exe="$prefix/drive_c/Textractor/x86/Textractor.exe"
+  if [ ! -f "$exe" ]; then
+    local inst="$ANIME4K_ROOT/translate/install-textractor.sh"
+    [ -f "$inst" ] || return 1
+    bash "$inst" --prefix "$prefix" --bridge "$bridge" >&2 || return 1
+  fi
+  ak_textractor_bridge_only "$prefix/drive_c/Textractor/x86"
+  printf '%s' "$exe"
+}
+
+# Find a wineserver for a Proton prefix: the resolved PROTON first, then any
+# compatibilitytools.d build, then PATH. A stale wineserver wedges the next
+# container (docs/translate.md).
+ak_wineserver_bin() { # [proton-dir]
+  local p="$1" f
+  [ -n "$p" ] && [ -x "$p/files/bin/wineserver" ] && { printf '%s' "$p/files/bin/wineserver"; return 0; }
+  for f in "$HOME"/.local/share/Steam/compatibilitytools.d/*/files/bin/wineserver \
+           "$HOME"/.steam/steam/compatibilitytools.d/*/files/bin/wineserver \
+           "$HOME"/.local/share/umu/*/files/bin/wineserver; do
+    [ -x "$f" ] && { printf '%s' "$f"; return 0; }
+  done
+  command -v wineserver 2>/dev/null
+}
+
 # Resolve the rpgmaker-linux wrapper's shared NW.js manifest (honors the
 # wrapper's custom-path file, then its default location).
 ak_rpgmaker_template() {
@@ -397,14 +449,48 @@ ak_mangohud_env() {
   export MANGOHUD_CONFIG="$cfg"
 }
 
+# Locate a Vulkan ICD manifest by vendor. File names differ across distros
+# (nvidia_icd.json, 10_nvidia.json, radeon_icd.x86_64.json, intel_icd.*), so
+# glob instead of hardcoding. Prints the path, or nothing when absent.
+ak_icd_file() { # nvidia|amd|intel
+  local vendor="$1" d f
+  case "$vendor" in nvidia|amd|intel) ;; *) return 1 ;; esac
+  for d in /usr/share/vulkan/icd.d /usr/local/share/vulkan/icd.d \
+           /etc/vulkan/icd.d "$HOME/.local/share/vulkan/icd.d"; do
+    [ -d "$d" ] || continue
+    case "$vendor" in
+      nvidia)
+        for f in "$d"/*nvidia*icd*.json; do
+          [ -f "$f" ] && { printf '%s' "$f"; return 0; }
+        done ;;
+      amd)
+        for f in "$d"/*radeon*icd*.json "$d"/*amd*icd*.json; do
+          [ -f "$f" ] && { printf '%s' "$f"; return 0; }
+        done ;;
+      intel)
+        for f in "$d"/*intel*icd*.json; do
+          [ -f "$f" ] && { printf '%s' "$f"; return 0; }
+        done ;;
+    esac
+  done
+  return 1
+}
+
 # Zink (OpenGL-on-Vulkan) env so vkBasalt can hook GL-only games.
-# GPU select: nvidia (GTX 1650) | amd (iGPU) | auto (loader default).
+# GPU select: nvidia | amd | intel | auto (loader default).
 ak_zink_env() {
-  case "${1:-nvidia}" in
-    nvidia) export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json ;;
-    amd) export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.json ;;
+  local gpu="${1:-auto}" icd
+  case "$gpu" in
+    nvidia|amd|intel)
+      if icd="$(ak_icd_file "$gpu")"; then
+        export VK_ICD_FILENAMES="$icd"
+      else
+        ak_log "warning: no $gpu Vulkan ICD found; using the loader default"
+        unset VK_ICD_FILENAMES
+      fi
+      ;;
     auto) unset VK_ICD_FILENAMES ;;
-    *) ak_die "unknown GPU '$1' (expected nvidia, amd or auto)" ;;
+    *) ak_die "unknown GPU '$gpu' (expected nvidia, amd, intel or auto)" ;;
   esac
   export __GLX_VENDOR_LIBRARY_NAME=mesa
   export MESA_LOADER_DRIVER_OVERRIDE=zink

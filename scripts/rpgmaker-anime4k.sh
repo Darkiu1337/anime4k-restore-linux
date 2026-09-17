@@ -17,7 +17,7 @@
 # Options:
 #   --gamepath DIR       game folder (or omit for picker)
 #   --variant S|M|L|Soft_S|Soft_L  Restore strength (default: L)
-#   --gpu nvidia|amd|auto  Vulkan device for game+filter (default: nvidia)
+#   --gpu nvidia|amd|intel|auto  Vulkan device for game+filter (default: auto)
 #   --fps N|off          MangoHud frame cap (default: 60; off disables)
 #   --hud                show MangoHud overlay (fps readout)
 #   --nwjsversion VER    pass through to rpgmaker-linux (e.g. 0.115.0)
@@ -37,7 +37,7 @@ usage() { sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; }
 
 VARIANT="L"
 GAMEPATH=""
-GPU="nvidia"
+GPU="auto"
 NWJSVER=""
 NOFALLBACK=0
 FPS="60"
@@ -110,13 +110,20 @@ ak_template_patch
 # Stale Chromium singleton locks (from killed runs) break startup; clear them.
 rm -f "$HOME/.config/RPG Maker MV/MZ (cicpoffs mount)/Singleton"* 2>/dev/null || true
 
-# X11 ozone + Vulkan device for game+filter.
+# X11 ozone + Vulkan device for game+filter. ICD file names vary by distro.
 export XDG_SESSION_TYPE=x11
-case "${GPU:-nvidia}" in
-  nvidia) export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json ;;
-  amd) export VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/radeon_icd.json ;;
+case "${GPU:-auto}" in
+  nvidia|amd|intel)
+    if _icd="$(ak_icd_file "$GPU")"; then
+      export VK_ICD_FILENAMES="$_icd"
+    else
+      ak_log "warning: no $GPU Vulkan ICD found; using the loader default"
+      unset VK_ICD_FILENAMES
+    fi
+    unset _icd
+    ;;
   auto) unset VK_ICD_FILENAMES ;;
-  *) ak_die "--gpu needs nvidia, amd or auto" ;;
+  *) ak_die "--gpu needs nvidia, amd, intel or auto" ;;
 esac
 ak_vkbasalt_env "$VARIANT"
 

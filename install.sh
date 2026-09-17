@@ -347,7 +347,13 @@ else
     case "$PM" in
       arch|fed) add_pkg chromium ;;
       deb)
-        if grep -qi ubuntu "$OS_RELEASE" 2>/dev/null; then add_pkg chromium-browser; else add_pkg chromium; fi
+        # Ubuntu's 'chromium-browser' is a snap stub whose CDP smoke test fails;
+        # don't auto-install it. Debian ships a real 'chromium'.
+        if grep -qi ubuntu "$OS_RELEASE" 2>/dev/null; then
+          add_note "Chromium browser (Ubuntu's chromium is a snap; install Brave/Chromium from a repo or .deb)"
+        else
+          add_pkg chromium
+        fi
         ;;
       *) add_note "Chromium browser" ;;
     esac

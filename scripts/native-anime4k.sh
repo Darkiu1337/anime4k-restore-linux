@@ -12,7 +12,7 @@
 #   --variant S|M|L|Soft_S|Soft_L  Restore strength (default: L)
 #   --gl zink|auto       zink = force translation+filter (default);
 #                        auto = launch unfiltered if Zink misbehaves
-#   --gpu nvidia|amd|auto  Vulkan device under Zink (default: nvidia/GTX 1650)
+#   --gpu nvidia|amd|intel|auto  Vulkan device under Zink (default: auto)
 #   --fps N|off          MangoHud frame cap (default: 60; off disables)
 #   --hud                show MangoHud overlay (fps readout)
 #   --lang LOCALE        game locale, e.g. ja_JP.UTF-8 (empty = system default)
@@ -32,7 +32,7 @@ usage() { sed -n '2,/^$/p' "$0" | sed 's/^# \{0,1\}//'; }
 
 VARIANT="L"
 GLMODE="zink"
-GPU="nvidia"
+GPU="auto"
 FPS="60"
 HUD=0
 LANG_SET=""

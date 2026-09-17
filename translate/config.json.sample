@@ -2,7 +2,7 @@
   "hook_url": "ws://localhost:6677",
   "hook_filter": "",
   "debugport": 9222,
-  "brave_bin": "/usr/bin/brave-origin",
+  "brave_bin": "",
   "brave_profile": "~/.cache/vn-translate/brave-cdp-profile",
   "deepl_url": "https://www.deepl.com/en/translator",
   "srclang": "ja",

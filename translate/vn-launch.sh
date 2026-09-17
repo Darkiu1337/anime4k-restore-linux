@@ -15,8 +15,20 @@
 #            HIDDEN; --show-hooker reveals Textractor's window (debug).
 #            Default (play mode): Textractor HIDDEN (style 0), game normal.
 set -e
-HERE="$(cd "$(dirname "$0")" && pwd)"
+# install.sh symlinks vn-launch into ~/.local/bin; resolve the real path or
+# HERE points at the link and anime4k-lib.sh / the .vbs template vanish.
+_SRC="${BASH_SOURCE[0]}"
+while [ -L "$_SRC" ]; do
+  _DIR="$(cd "$(dirname "$_SRC")" && pwd)"
+  _SRC="$(readlink "$_SRC")"
+  case "$_SRC" in /*) : ;; *) _SRC="$_DIR/$_SRC" ;; esac
+done
+HERE="$(cd "$(dirname "$_SRC")" && pwd)"
+unset _SRC _DIR
 REG="$HERE/translate.json"
+# Bridge build to provision on self-heal (fixed = tagged/v2; install-textractor
+# falls back to stock when the asset is absent).
+BRIDGE="${TRANSLATE_BRIDGE:-fixed}"
 # Shared core (config, variants, vkBasalt, WoW64). Sourced early so --no-wow64
 # applies even with --filter off; docs/limits.md.
 AK_LIB="$(dirname "$HERE")/scripts/anime4k-lib.sh"
@@ -99,12 +111,24 @@ if [ "$WOW64" = "1" ] && [ -n "$PROTON" ] \
   unset PROTONPATH
 fi
 UMU="$(command -v umu-run)" || { echo "umu-run not found" >&2; exit 1; }
-TRX="$PREFIX/drive_c/Textractor/x86/Textractor.exe"
-[ -f "$TRX" ] || "$HERE/install-textractor.sh" --prefix "$PREFIX"
 
 if [ "$CMD" = "status" ]; then
   "$HERE/watch-bridge.sh" --once
   exit $?
+fi
+
+# Provision Textractor into the canonical dir + this prefix and force the
+# bridge-only extension set (docs/translate.md). Self-heals prefixes umu only
+# creates on first launch. --dry-run stays side-effect free.
+TRX="$PREFIX/drive_c/Textractor/x86/Textractor.exe"
+if [ "$DRYRUN" != "1" ] && [ "$CMD" = "launch" ]; then
+  if ! command -v ak_textractor_ensure >/dev/null 2>&1; then
+    echo "error: anime4k-lib.sh not found at $AK_LIB" >&2; exit 1
+  fi
+  TRX="$(ak_textractor_ensure "$PREFIX" "$BRIDGE")" \
+    || { echo "error: Textractor provisioning failed (run: translate/fetch-vendor.sh, then re-run install.sh)" >&2; exit 1; }
+  [ -n "$TRX" ] && [ -f "$TRX" ] \
+    || { echo "error: Textractor missing after provisioning: ${TRX:-<none>}" >&2; exit 1; }
 fi
 
 [ -n "$GAME" ] || [ -n "$EXE_FLAG" ] || { echo "need --game ID or --exe PATH (see --list)" >&2; exit 1; }
@@ -136,11 +160,14 @@ stop_session() { # stop_session <label>: kill game exes, wscript, stale wineserv
   sleep 5
   if pgrep -f "$pat1" >/dev/null 2>&1; then echo "stop: processes remain"; exit 1; fi
   # Drop lingering wineserver or the next launch wedges (docs/translate.md).
-  _P="$HOME/.local/share/Steam/compatibilitytools.d/Proton-CachyOS Latest"
-  if [ -x "$_P/files/bin/wineserver" ]; then
-    WINEPREFIX="$PREFIX" "$_P/files/bin/wineserver" -k 2>/dev/null || true
+  # Use the configured Proton's wineserver, else any installed build, else PATH.
+  _ws="$(ak_wineserver_bin "${PROTON:-}" || true)"
+  if [ -n "$_ws" ]; then
+    WINEPREFIX="$PREFIX" "$_ws" -k 2>/dev/null || true
+  else
+    echo "note: no wineserver found to drop; if the next launch stalls, run: wineserver -k" >&2
   fi
-  unset _P
+  unset _ws
   echo "stop: $label session ended"
 }
 
@@ -152,7 +179,7 @@ fi
 
 # --- launch ---
 [ -f "$EXE" ] || { echo "game not found: $EXE" >&2; exit 1; }
-mkdir -p "$PREFIX/drive_c/hook"
+if [ "$DRYRUN" != "1" ]; then mkdir -p "$PREFIX/drive_c/hook"; fi
 seed_saved_hooks() { # <wine-exe-path> <hook-code>: Textractor auto-attach
   # Seeded lines never clobber a richer user-saved hook (docs/translate.md).
   local vexe="$1" code="$2" tdir="$PREFIX/drive_c/Textractor/x86"
@@ -205,8 +232,10 @@ print('Z:' + p.replace('/', chr(92)) if not p.startswith(pfx + '/drive_c') else 
 VGAME="$(to_winpath "$EXE")"
 VGDIR="$(to_winpath "$GDIR")"
 GBASE="${VGAME##*\\}"
-seed_saved_hooks "$VGAME" "$HOOKCODE_FLAG"
-python3 - "$HERE/launch.vbs.template" "$PREFIX/drive_c/hook/$GAME.vbs" <<EOF
+# --dry-run stays side-effect free: no SavedHooks seeding, no .vbs written.
+if [ "$DRYRUN" != "1" ]; then
+  seed_saved_hooks "$VGAME" "$HOOKCODE_FLAG"
+  python3 - "$HERE/launch.vbs.template" "$PREFIX/drive_c/hook/$GAME.vbs" <<EOF
 import re, sys
 t = open(sys.argv[1], 'rb').read().decode('utf-8')
 t = t.replace('@HOOKER_DIR@', r'C:\Textractor\x86')
@@ -225,6 +254,7 @@ t = t.replace('\r\n', '\n').replace('\r', '\n').replace('\n', '\r\n')
 open(sys.argv[2], 'wb').write(t.encode('ascii'))
 print('rendered $GAME.vbs (hooker style $HSTYLE)')
 EOF
+fi
 export WINEPREFIX="$PREFIX"
 [ -n "$PROTON" ] && export PROTONPATH="$PROTON"
 export GAMEID

@@ -1,0 +1,4 @@
+# Textractor exact-matches this file; never let git add or strip a trailing
+# newline / rewrite line endings (docs/translate.md).
+SavedExtensions.txt -text
+Textractor.ini -text

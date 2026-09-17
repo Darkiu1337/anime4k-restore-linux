@@ -78,9 +78,11 @@ stock-bridge installs simply keep following the selection). Manual control:
   Textractor yet the bridge stayed totally silent for minutes; unchecking
   everything but `textractor_websocket` restored tagged traffic instantly.
   A loaded translate ext can stall the whole sentence pipeline, so translate
-  in the textbox, never in Textractor. `install-textractor.sh` writes
-  `SavedExtensions.txt` = `textractor_websocket_x86>` (bridge-only) when the
-  bridge is missing from it, so the server actually starts on load.
+  in the textbox, never in Textractor. Textractor loads six stock extensions
+  whenever `SavedExtensions.txt` is missing, so provisioning **always forces**
+  the bundled bridge-only file (`translate/textractor-config/SavedExtensions.txt`)
+  and `vn-launch.sh` re-forces it before every session — a stale or missing
+  file can never re-enable the stock set.
 * **Non-ASCII game paths.** Wine's `wscript` reads ASCII/ANSI `.vbs` only —
   a UTF-16 template silently does nothing. The renderer keeps the file ASCII
   and emits non-ASCII path characters as `ChrW(&hXXXX)` concatenations, so
@@ -230,8 +232,13 @@ bottom and scrolls when you scroll up.
 
 `install.sh` offers translation support (default Yes): fetches the pinned
 Textractor bundle + bridge (fixed v2 asset preferred, stock fallback),
-installs into the shared prefix, symlinks `vn-launch` / `vn-textbox` /
-`vn-translate`.
+provisions Textractor **once per machine** under
+`~/.local/share/anime4k/textractor` (applying the bundled
+`translate/textractor-config/` config), symlinks each Wine prefix's
+`drive_c/Textractor` to it, and symlinks `vn-launch` / `vn-textbox` /
+`vn-translate` into `~/.local/bin`. `vn-launch.sh` re-provisions/links on
+demand, so a prefix umu only creates on first launch is covered too — and it
+forces the bridge-only extension set every session.
 Settings come from `translate/config.json` and the games registry from
 `translate/translate.json` — both seeded from their `.sample` files on
 first install (never overwritten); the Python entry points also start on a
