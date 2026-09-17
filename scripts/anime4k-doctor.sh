@@ -2,8 +2,9 @@
 # anime4k-doctor — self-test the Anime4K Restore filter chain + translation
 # readiness, without any game.
 # Checks, in order: layer manifest, library resolution, shaders, GPUs,
-# runner backends, (with a display) a live vkcube+vkBasalt run, and the
-# translation deps (bridge client, requests, textbox, QML modules, browser).
+# runner backends, 32-bit/WoW64 posture, (with a display) a live
+# vkcube+vkBasalt run, and the translation deps (bridge client, requests,
+# textbox, QML modules, browser, GUI self-test).
 # Exit 0 = chain ready, 1 = problems found. Never touches user config.
 # Usage: anime4k-doctor [--live/--no-live]  (also: anime4k doctor)
 _SRC="${BASH_SOURCE[0]}"

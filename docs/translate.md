@@ -112,8 +112,8 @@ stock-bridge installs simply keep following the selection). Manual control:
   picker. A/B proven. Rebuild from `translate/bridge-fork.patch`
   (rustup stable + `i686-pc-windows-gnu` + mingw-w64-gcc; the fork's
   `textractor.rs` decodes `"text name"` as UTF-16 — upstream passes a
-  `wchar_t*`); prebuilt DLL ships as release asset `translate-v2`,
-  sha256-verified at install.
+  `wchar_t*`); the prebuilt DLL is used from the `translate-v2` release asset
+  when published, else the stock build — sha256-verified at install.
 
 ## DeepL browser (hidden by default)
 
@@ -204,7 +204,8 @@ bottom and scrolls when you scroll up.
 
 `install.sh` offers translation support (default Yes): fetches the pinned
 Textractor bundle + bridge (fixed v2 asset preferred, stock fallback),
-installs into the shared prefix, symlinks `vn-launch` / `vn-textbox`.
+installs into the shared prefix, symlinks `vn-launch` / `vn-textbox` /
+`vn-translate`.
 Settings come from `translate/config.json` and the games registry from
 `translate/translate.json` — both seeded from their `.sample` files on
 first install (never overwritten); the Python entry points also start on a

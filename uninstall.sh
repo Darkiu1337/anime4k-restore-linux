@@ -23,7 +23,8 @@ done
 [ "$removed" = "1" ] && echo "removed deployed shaders."
 [ "$kept" = "1" ] && echo "(some shader files were kept, see above.)"
 for link in "$HOME/.local/bin/anime4k" "$HOME/.local/bin/anime4k-gui" \
-            "$HOME/.local/bin/vn-launch" "$HOME/.local/bin/vn-textbox"; do
+            "$HOME/.local/bin/vn-launch" "$HOME/.local/bin/vn-textbox" \
+            "$HOME/.local/bin/vn-translate" "$HOME/.local/bin/vn-textbox-qml"; do
   if [ -L "$link" ]; then
     rm -f "$link"
     echo "removed symlink $link"

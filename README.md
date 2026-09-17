@@ -13,7 +13,9 @@ Five Restore variants ship: **S, M, L, Soft_S, Soft_L**
 This is a toy project 100% vibecoded with Muse Spark 1.3 free, made for
 personal use first.
 
-## Gallery (Restore L, 1080p), It is easier to notice when actually using.
+## Gallery (Restore L, 1080p)
+
+The effect is easier to notice while playing than in stills.
 
 | Daily Lives of My Countryside (RPGMaker) | |
 |---|---|
@@ -52,6 +54,10 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
 * **Theme**: the GUI and the translation textbox use the KDE Quick Controls
   style and follow your desktop colour scheme (e.g. Omarchy's KDE theme),
   light or dark.
+* **Settings**: a per-app GUI font (defaults to your environment font; the
+  textbox keeps its own), and a Proton picker that scans the common
+  `compatibilitytools.d` folders — UMU-Proton is always available, and a
+  selected build without new WoW64 support falls back to it automatically.
 * **Game detection**: engine sniffing pre-selects the runner.
 * **Frame caps everywhere**: DXVK on Proton, MangoHud elsewhere; optional
   overlay readout.
@@ -75,7 +81,7 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
 
 ```sh
 git clone https://github.com/Darkiu1337/anime4k-restore-linux.git && cd anime4k-restore-linux
-./install.sh            # deps, shaders, Proton-CachyOS, symlinks (offers rpgmaker-linux)
+./install.sh            # deps (batched; Arch/Debian/Ubuntu/Fedora), shaders, Proton-CachyOS, symlinks
 ./install.sh --check-only   # audit only
 anime4k                 # TUI  |  anime4k-gui  # Qt GUI
 ```
@@ -83,8 +89,8 @@ anime4k                 # TUI  |  anime4k-gui  # Qt GUI
 Details: `requirements.md`. One shared Wine prefix lives under
 `~/.local/share/anime4k/prefixes/`; personal defaults in
 `~/.config/anime4k/config.json`. The installer symlinks `anime4k` /
-`anime4k-gui` (plus `vn-launch` / `vn-textbox` with translation support) into
-`~/.local/bin` and offers to add it to `PATH`.
+`anime4k-gui` (plus `vn-launch` / `vn-textbox` / `vn-translate` with
+translation support) into `~/.local/bin` and offers to add it to `PATH`.
 
 ## Troubleshooting
 

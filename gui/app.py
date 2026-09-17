@@ -18,7 +18,7 @@ from PySide6.QtCore import (QAbstractListModel, QModelIndex, QObject, Qt,
                             QProcess, QProcessEnvironment, QTimer, QUrl,
                             Signal, Slot, Property, QMetaObject, Q_ARG,
                             QCoreApplication, qInstallMessageHandler)
-from PySide6.QtGui import QGuiApplication, QPalette
+from PySide6.QtGui import QGuiApplication, QPalette, QFont, QFontDatabase
 from PySide6.QtQml import QQmlApplicationEngine
 from PySide6.QtQuickControls2 import QQuickStyle
 
@@ -36,11 +36,45 @@ def apply_style():
         except Exception:
             pass
 
+
+def apply_gui_font(app, base_font):
+    """Per-app GUI font from config over the environment font.
+    Empty `gui.font` / `gui.font_size` <= 0 keep the environment value
+    (qt6ct/KDE), so the default is whatever the user already configured."""
+    cfg = store.load_config()
+    family = str(cfg.get("gui.font", "") or "").strip()
+    try:
+        size = int(cfg.get("gui.font_size", 0) or 0)
+    except (TypeError, ValueError):
+        size = 0
+    font = QFont(base_font)
+    if family:
+        font.setFamily(family)
+    if size > 0:
+        font.setPointSize(size)
+    app.setFont(font)
+    # Push it onto live windows so the change shows without a relaunch.
+    engine = getattr(app, "_engine", None)
+    if engine is not None:
+        for obj in engine.rootObjects():
+            try:
+                obj.setProperty("font", font)
+            except Exception:
+                pass
+    return font
+
 QML_ERRORS = []
 
 
 def _capture_qt_messages(mode, context, message):
     text = str(message)
+    # The KDE Quick Controls style emits its own warnings (notably a benign
+    # implicitHeight binding loop from its Menu.qml, where the ListView feeds
+    # the template's implicitHeight). That is not our code and never
+    # actionable — drop vendor-style output so it cannot spam the log or fail
+    # the self-test. Genuine errors in our own QML are still captured below.
+    if "org/kde/desktop/" in text or "qrc:/qt/qml/org/kde/" in text:
+        return
     if ".qml:" in text or "TypeError" in text or "ReferenceError" in text \
             or "is not defined" in text:
         QML_ERRORS.append(text)
@@ -261,6 +295,11 @@ class GuiBackend(QObject):
     @Slot(result=str)
     def runnersJson(self):
         return json.dumps(paths.RUNNERS)
+
+    @Slot(result=str)
+    def protonsJson(self):
+        """Detected Proton builds for the Settings dropdown ('' = umu-managed)."""
+        return json.dumps(system.list_protons())
 
     @Slot(result="QVariant")
     def locales(self):
@@ -638,6 +677,9 @@ class GuiBackend(QObject):
         base = store.load_config()
         base.update(cfg)
         store.save_config(base)
+        app = QGuiApplication.instance()
+        if app is not None:
+            apply_gui_font(app, getattr(app, "_base_font", app.font()))
 
 
 def self_test(backend, model, window, warnings, qml_errors=None):
@@ -668,7 +710,13 @@ def self_test(backend, model, window, warnings, qml_errors=None):
     assert isinstance(backend.listVariants(), list) and backend.listVariants()
     assert isinstance(backend.listGpus(), list) and backend.listGpus()
     assert json.loads(backend.runnersJson()).get("proton")
+    _protons = json.loads(backend.protonsJson())
+    assert _protons and _protons[0]["value"] == "", \
+        "proton list must start with the umu-managed option"
+    assert all("wow64" in p for p in _protons), "proton entries need a wow64 flag"
     assert window is not None, "Main.qml must create a root window"
+    assert window.findChild(QObject, "protonCombo") is not None, "proton combo must exist"
+    assert window.findChild(QObject, "guiFontCombo") is not None, "GUI font combo must exist"
     if store.load_games():
         assert window.property("gid"), "first game must be auto-selected"
     else:
@@ -712,6 +760,11 @@ def _diagnose(app, engine, model, backend):
               "highlight:", pal.color(QPalette.ColorRole.Highlight).name())
     except Exception as e:
         print("style/palette: n/a", e)
+    try:
+        f = app.font()
+        print("gui font:", f.family(), f.pointSize())
+    except Exception as e:
+        print("gui font: n/a", e)
     print("games:", model.rowCount())
     print("roots:", len(engine.rootObjects()))
     ctx = engine.rootContext()
@@ -754,7 +807,10 @@ def main():
     app.setApplicationName("Anime4K Launcher")
     qInstallMessageHandler(_capture_qt_messages)
     apply_style()
+    app._base_font = app.font()
     engine = QQmlApplicationEngine()
+    app._engine = engine
+    apply_gui_font(app, app._base_font)
     qml_warnings = []
     engine.warnings.connect(lambda w: qml_warnings.extend(str(x) for x in w))
     model = GamesModel(app)
@@ -763,6 +819,7 @@ def main():
     app._qml_objects = (model, backend)
     engine.rootContext().setContextProperty("backend", backend)
     engine.rootContext().setContextProperty("gamesModel", model)
+    engine.rootContext().setContextProperty("fontFamilies", QFontDatabase.families())
     engine.load(QUrl.fromLocalFile(os.path.join(APP_DIR, "qml", "Main.qml")))
     for _ in range(20):
         app.processEvents()

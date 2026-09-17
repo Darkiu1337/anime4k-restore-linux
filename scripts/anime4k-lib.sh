@@ -13,7 +13,7 @@ ANIME4K_ROOT="$(cd "$_ANIME4K_LIB_DIR/.." && pwd)"
 unset _ANIME4K_LIB_DIR
 
 # User config (~/.config/anime4k/config.json, optional). Keys: prefix, proton,
-# layer_dir, shader_dir. Missing file/keys fall back to builtins below.
+# layer_dir, shader_dir, wow64. Missing file/keys fall back to builtins below.
 ANIME4K_CONFIG="$HOME/.config/anime4k/config.json"
 ak_config_get() {
   python3 -c "import json,sys; print(json.load(open('$ANIME4K_CONFIG')).get('$1', '$2'))" 2>/dev/null || printf '%s' "$2"
@@ -42,6 +42,19 @@ ak_need() {
 # 64-bit vkBasalt hooks 32-bit D3D9 too. Requires a 64-bit prefix; a legacy
 # win32 prefix (new WoW64-unsupported) keeps old WoW64. Opt out with
 # `wow64=0` / --no-wow64. Why: docs/limits.md.
+# True when a Proton build can run 32-bit PE through new WoW64. A bare
+# name/codename (not a local dir) is assumed capable (umu fetches the latest).
+ak_proton_wow64_capable() {
+  local p="$1"
+  [ -n "$p" ] || return 0
+  [ -d "$p" ] || return 0
+  [ -x "$p/files/bin-wow64/wine" ] && return 0
+  grep -qa 'PROTON_USE_WOW64' "$p/proton" 2>/dev/null && return 0
+  # A 64-bit-only build (no wine64 loader) always runs new WoW64.
+  [ -e "$p/files/bin/wine" ] && [ ! -e "$p/files/bin/wine64" ] && return 0
+  return 1
+}
+
 ak_wow64_env() {
   local prefix="$1" want="${2:-1}"
   if [ "$want" != "1" ]; then

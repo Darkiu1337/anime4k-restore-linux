@@ -9,7 +9,7 @@ from upstream docs — confirmations welcome.
 |---|---|---|---|---|
 | python3 | `python` [verified] | `python3` | `python3` | JSON/config handling |
 | jq | `jq` [verified] | `jq` | `jq` | TUI library |
-| gum | `gum` [verified] | [charm repo](https://repo.charm.sh) or release `.deb` | `gum` | TUI only |
+| gum | `gum` [verified] | release `.deb` (charmbracelet/gum) | `gum` | TUI only |
 | zenity | `zenity` [verified] | `zenity` | `zenity` | file pickers |
 | vkBasalt | AUR `vkbasalt`, else automated source build [verified: source build] | `vkbasalt`, else source build | `vkBasalt`, else source build | the filter runtime; `install.sh` handles both; verify with `anime4k doctor` |
 | mangohud | `mangohud` [verified] | `mangohud` | `mangohud` | fps cap + overlay |
@@ -45,15 +45,19 @@ the system package; the app follows the desktop via the KDE colour scheme
 
 QML modules needed: `QtQuick`, `QtQuick.Controls`, `QtQuick.Layouts`
 (screens), `QtQuick.Dialogs` (file/font/color pickers) and `QtQuick.Effects`
-(text shadow). On Arch these ship in `qt6-declarative` [verified: 6.11.2]
-(pulled in with the desktop Qt stack; `pip install PySide6` bundles them).
+(text shadow). Arch: `qt6-declarative` [verified: 6.11.2]; Debian/Ubuntu:
+`qml6-module-qtquick{,-controls,-layouts,-dialogs,-effects}`; Fedora:
+`qt6-qtdeclarative`. (`pip install PySide6` bundles them.)
 
 The GUI and textbox use the **KDE Quick Controls style**
-(`org.kde.desktop`, Arch package `qqc2-desktop-style` [verified]) so both
-follow your desktop colour scheme (e.g. Omarchy's `kdeglobals` theme) and
-light/dark automatically. Without it they fall back to Fusion. There is no
-in-app theme switch. `anime4k-gui --diagnose` prints the resolved style and
-palette, and `--self-test` loads the whole UI headlessly (see README).
+(`org.kde.desktop`) so both follow your desktop colour scheme (e.g. Omarchy's
+`kdeglobals` theme) and light/dark automatically. Arch: `qqc2-desktop-style`
+[verified]; Debian/Ubuntu: `qqc2-desktop-style`; Fedora:
+`kf6-qqc2-desktop-style`. Without it they fall back to Fusion. The GUI font
+defaults to your environment font (e.g. qt6ct/KDE) and can be overridden
+per-app in Settings. There is no in-app theme switch. `anime4k-gui --diagnose`
+prints the resolved style, font and palette, and `--self-test` loads the whole
+UI headlessly (see README).
 
 ## VN translation (translate/)
 

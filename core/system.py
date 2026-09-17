@@ -39,6 +39,68 @@ def list_gpus():
     return names
 
 
+# Proton discovery for the launcher's Proton dropdown. Only Proton-type
+# builds (an executable `proton`/`proton.sh`) are listed; Wine runners are not
+# selectable through the umu/PROTONPATH runner. `value` is an absolute path
+# (umu accepts a path), "" means the umu-managed UMU-Proton.
+PROTON_DIRS = (
+    "~/.local/share/Steam/compatibilitytools.d",
+    "~/.steam/steam/compatibilitytools.d",
+    "~/.steam/root/compatibilitytools.d",
+    "~/.var/app/com.valvesoftware.Steam/data/Steam/compatibilitytools.d",
+    "/usr/share/steam/compatibilitytools.d",
+    "/usr/local/share/steam/compatibilitytools.d",
+)
+
+
+def proton_wow64_capable(path):
+    """True when a Proton dir can run 32-bit PE through new WoW64.
+    A dir without a readable `proton` script is assumed capable (latest)."""
+    if not os.path.isdir(path):
+        return False
+    if os.path.isfile(os.path.join(path, "files", "bin-wow64", "wine")):
+        return True
+    try:
+        with open(os.path.join(path, "proton"), encoding="utf-8",
+                  errors="replace") as f:
+            if "PROTON_USE_WOW64" in f.read():
+                return True
+    except OSError:
+        pass
+    # A 64-bit-only build (no wine64 loader) always runs new WoW64.
+    return (os.path.isfile(os.path.join(path, "files", "bin", "wine"))
+            and not os.path.exists(os.path.join(path, "files", "bin", "wine64")))
+
+
+def list_protons():
+    """Pinned umu-managed entry first, then one per detected Proton build.
+    Each entry: {label, value, wow64}."""
+    out = [{"label": "umu-managed (UMU-Proton — always works)",
+            "value": "", "wow64": True}]
+    seen = set()
+    found = []
+    for root in PROTON_DIRS:
+        root = os.path.expanduser(root)
+        try:
+            names = sorted(os.listdir(root))
+        except OSError:
+            continue
+        for name in names:
+            d = os.path.join(root, name)
+            real = os.path.realpath(d)
+            if real in seen or not os.path.isdir(d):
+                continue
+            proton = os.path.join(d, "proton")
+            if not (os.path.isfile(proton) and os.access(proton, os.X_OK)):
+                continue
+            seen.add(real)
+            found.append({"label": name, "value": d,
+                          "wow64": proton_wow64_capable(d)})
+    found.sort(key=lambda e: e["label"].lower())
+    out.extend(found)
+    return out
+
+
 def detect(path):
     """Engine detection; wraps the proven bash implementation in
     scripts/anime4k-lib.sh. Returns (engine, runner, confidence, root, detail)

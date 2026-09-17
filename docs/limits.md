@@ -12,7 +12,7 @@ a Vulkan swapchain**. Everything below follows from that.
 | D3D12 (VKD3D-Proton) | yes | same mechanism, verified compatible |
 | Native Vulkan | yes | passes straight through |
 | OpenGL (wined3d) / software / very old titles | no | game launches unfiltered, no error — if a title that filters on one machine doesn't on another, compare `PROTON_LOG=1` renderer lines and the DXVK device (`--dry-run` shows it) |
-| 32-bit executables | yes (new WoW64, default) | New WoW64 runs the 32-bit `.exe` inside the single 64-bit host process, so Wine forwards its Vulkan calls to the 64-bit loader and vkBasalt hooks it. Verified with a 32-bit D3D9 title (`mlove.exe`, UMU-Proton-10.0-4): old WoW64 = 32-bit process, 0 vkBasalt effects; new WoW64 = 64-bit process, `ReshadeEffect` created and applied. On by default; opt out with the runner's `--no-wow64` or per-game/config `wow64=0`. Old WoW64 needs a 32-bit vkBasalt (not shipped), so 32-bit titles stay unfiltered there |
+| 32-bit executables | yes (new WoW64, default) | Old WoW64 runs the exe in a 32-bit process (needs a 32-bit vkBasalt we do not ship); the default new WoW64 runs it in the 64-bit host so the 64-bit layer hooks it — details and the verified test below |
 | 32-bit native Linux binaries (not Proton) | no | our vkBasalt build is 64-bit only; new WoW64 only helps Windows PE, not native ELF |
 
 Ren'Py Windows builds are auto-switched to the ANGLE (DirectX) renderer so
@@ -21,10 +21,15 @@ they land on DXVK; override with `RENPY_RENDERER` if you know better.
 32-bit Windows titles use Wine's **new WoW64** by default: the runner exports
 `WINEARCH=wow64` + `PROTON_USE_WOW64=1`, the 32-bit PE code runs inside the
 64-bit host process, and the 64-bit vkBasalt sees the game's Vulkan swapchain.
-Wine 11 considers new WoW64 fully supported; Proton 10 (UMU-Proton) supports it
-behind the flag. Turn it off per game with `--no-wow64` / `"wow64": "0"` when a
-title (notably anti-cheat DRM) refuses new WoW64. A legacy `win32` prefix can't
-use it and the runner silently falls back to old WoW64 (unfiltered for 32-bit).
+Verified with a 32-bit D3D9 title (`mlove.exe`, UMU-Proton-10.0-4): old WoW64 =
+32-bit process, 0 vkBasalt effects; new WoW64 = 64-bit process, `ReshadeEffect`
+created and applied. Wine 11 considers new WoW64 fully supported; Proton 10
+(UMU-Proton) supports it behind the flag. Turn it off per game with
+`--no-wow64` / `"wow64": "0"` when a title (notably anti-cheat DRM) refuses new
+WoW64. A legacy `win32` prefix can't use it and the runner silently falls back
+to old WoW64 (unfiltered for 32-bit). If a selected Proton build has no new
+WoW64 support at all, the runner warns and falls back to the umu-managed
+UMU-Proton.
 
 ### rpgmaker (RPGMaker game folders)
 | Engine | Filter? | Notes |
@@ -49,13 +54,13 @@ separate filter device. Pick per game based on where you want the heat.
 Defaults: the proton runner auto-selects the discrete GPU when one is
 detectable (`--dry-run` prints the choice; `--dxvk-device auto` forces the
 loader default, an explicit name overrides). The rpgmaker/native runners
-take `--gpu nvidia|amd|auto`. (An early theory blamed the default adapter
-for a missed filter — that case turned out to be the Proton build — but
-pinning game+filter to the strong GPU remains the sane default.)
+take `--gpu nvidia|amd|auto`. (A missed filter on a 32-bit title is a
+WoW64-mode issue, not a GPU one — see the proton table above.)
 
 Run `anime4k doctor` on a new machine to verify the whole chain (manifest,
-library, shaders, GPU, runner backends, translation deps, KDE QML style, live
-vkcube run and a headless GUI self-test) without any game.
+library, shaders, GPU, runner backends, 32-bit/WoW64 posture, translation
+deps, KDE QML style, live vkcube run and a headless GUI self-test) without any
+game.
 
 ## Display servers and compositors
 

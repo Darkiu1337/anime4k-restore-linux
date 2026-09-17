@@ -11,6 +11,8 @@ ApplicationWindow {
     visible: true
     property string gid: ""
 
+    SystemPalette { id: sys; colorGroup: SystemPalette.Active }
+
     function refreshDetails() {
         detailText.text = root.gid === "" ? "Select a game." : backend.gameDetails(root.gid)
         detailIcon.source = root.gid === "" ? "" : backend.iconFor(root.gid)
@@ -40,17 +42,25 @@ ApplicationWindow {
 
     Component.onCompleted: ensureSelection()
 
-    menuBar: MenuBar {
-        Menu {
-            title: "File"
-            Action {
-                text: "Settings…"
-                onTriggered: { settingsDlg.load(); settingsDlg.open() }
+    header: ColumnLayout {
+        spacing: 0
+        RowLayout {
+            Layout.fillWidth: true
+            MenuBarItem {
+                text: "Settings"
+                onClicked: { settingsDlg.load(); settingsDlg.open() }
             }
-            Action {
+            MenuBarItem {
                 text: "Quit"
-                onTriggered: root.close()
+                onClicked: root.close()
             }
+            Item { Layout.fillWidth: true }
+        }
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.preferredHeight: 1
+            color: sys.windowText
+            opacity: 0.25
         }
     }
 
@@ -110,6 +120,13 @@ ApplicationWindow {
             }
         }
 
+        Rectangle {
+            Layout.fillHeight: true
+            Layout.preferredWidth: 1
+            color: sys.windowText
+            opacity: 0.25
+        }
+
         ColumnLayout {
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -122,6 +139,14 @@ ApplicationWindow {
                     Layout.preferredHeight: 64
                     fillMode: Image.PreserveAspectFit
                     visible: status === Image.Ready
+                }
+                Rectangle {
+                    Layout.preferredWidth: 1
+                    Layout.preferredHeight: detailIcon.height
+                    Layout.alignment: Qt.AlignVCenter
+                    color: sys.windowText
+                    opacity: 0.25
+                    visible: detailIcon.visible
                 }
                 Label {
                     id: detailText

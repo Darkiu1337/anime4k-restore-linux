@@ -73,6 +73,14 @@ elif command -v ak_config_get >/dev/null 2>&1; then
 else
   WOW64="1"
 fi
+# A selected Proton without new WoW64 support falls back to umu-managed.
+if [ "$WOW64" = "1" ] && [ -n "$PROTON" ] \
+   && command -v ak_proton_wow64_capable >/dev/null 2>&1 \
+   && ! ak_proton_wow64_capable "$PROTON"; then
+  echo "warning: '$PROTON' has no new WoW64 support — falling back to umu-managed UMU-Proton" >&2
+  PROTON=""
+  unset PROTONPATH
+fi
 UMU="$(command -v umu-run)" || { echo "umu-run not found" >&2; exit 1; }
 TRX="$PREFIX/drive_c/Textractor/x86/Textractor.exe"
 [ -f "$TRX" ] || "$HERE/install-textractor.sh" --prefix "$PREFIX"

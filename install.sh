@@ -71,7 +71,7 @@ confirm_no() {
 
 vkbasalt_layer_present() {
   # Case-insensitive: the source build installs vkBasalt.json (lowercase v,
-  # capital B), which the old *vkbasalt*|*VkBasalt* globs missed.
+  # capital B).
   local _d
   for _d in "$HOME/.config/vulkan/implicit_layer.d" "$HOME/.local/share/vulkan/implicit_layer.d" \
             /usr/local/share/vulkan/implicit_layer.d /usr/share/vulkan/implicit_layer.d; do
@@ -900,8 +900,9 @@ if [ "$SYMLINK" = "1" ]; then
   if [ -d "$ROOT/translate" ]; then
     ln -sf "$ROOT/translate/vn-launch.sh" "$HOME/.local/bin/vn-launch"
     ln -sf "$ROOT/translate/textbox.py" "$HOME/.local/bin/vn-textbox"
+    ln -sf "$ROOT/translate/vn_translate.py" "$HOME/.local/bin/vn-translate"
     rm -f "$HOME/.local/bin/vn-textbox-qml"
-    echo "symlinked: vn-launch, vn-textbox -> ~/.local/bin/ (translation)"
+    echo "symlinked: vn-launch, vn-textbox, vn-translate -> ~/.local/bin/ (translation)"
   fi
   case ":$PATH:" in
     *":$HOME/.local/bin:"*) ;;

@@ -130,6 +130,13 @@ case "$PROTON_FLAG" in
 esac
 # WoW64: flag > config (default on) — docs/limits.md.
 if [ -n "$WOW64_FLAG" ]; then WOW64="$WOW64_FLAG"; else WOW64="$(ak_config_get wow64 1)"; fi
+# A selected Proton without new WoW64 support can't serve 32-bit titles: warn
+# and fall back to the umu-managed UMU-Proton (docs/limits.md).
+if [ "$WOW64" = "1" ] && [ -n "$PROTON" ] && ! ak_proton_wow64_capable "$PROTON"; then
+  ak_log "warning: '$PROTON' has no new WoW64 support — falling back to umu-managed UMU-Proton"
+  PROTON=""
+  unset PROTONPATH
+fi
 
 export WINEPREFIX="$PREFIX"
 [ -n "$PROTON" ] && export PROTONPATH="$PROTON"
