@@ -182,11 +182,7 @@ else
 fi
 unset _AK_DGPU
 if [ -n "$LANG_SET" ]; then
-  export LANG="$LANG_SET"
-  export HOST_LC_ALL="$LANG_SET"
-  if ! locale -a 2>/dev/null | grep -qi "^${LANG_SET%%.*}"; then
-    ak_log "warning: locale $LANG_SET not generated on this system; if text looks wrong or the game still crashes, add it to /etc/locale.gen and run: sudo locale-gen"
-  fi
+  ak_locale_env "$LANG_SET"
 fi
 if [ "$FPS" != "off" ]; then
   [[ "$FPS" =~ ^[0-9]+$ ]] || ak_die "--fps needs a number or off"

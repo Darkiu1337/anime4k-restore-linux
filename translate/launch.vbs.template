@@ -2,5 +2,7 @@ Dim sh
 Set sh = CreateObject("WScript.Shell")
 sh.CurrentDirectory = "@HOOKER_DIR@"
 sh.Run """@HOOKER_EXE@"" /p@GAME_BASE@", @HOOKER_STYLE@, False
+On Error Resume Next
 sh.CurrentDirectory = "@GAME_DIR@"
-sh.Run "@GAME_EXE@", 1, True
+On Error GoTo 0
+sh.Run """@GAME_EXE@""", 1, True

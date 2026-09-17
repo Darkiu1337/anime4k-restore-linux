@@ -110,14 +110,20 @@ uninstallers, redist installers…) are never mistaken for the game.
 ## Game language (`--lang`, Proton/native)
 
 Some titles (notably Japanese VNs) only run correctly under their native
-locale. Setting it exports **both** `HOST_LC_ALL` and `LANG`: since
-Proton 10, Proton starts Wine with `LC_ALL=C`, which silently overrides a
-lone `LANG` (ValveSoftware/Proton#9156) — so `LANG` alone no longer works.
+locale. Setting it exports `LANG`, plus `HOST_LC_ALL` **only when the host
+already has that locale generated**: since Proton 10, Proton starts Wine
+with `LC_ALL=C`, which silently overrides a lone `LANG`, so the
+pressure-vessel host hint is what carries the locale through.
 
-No sudo or host changes needed in the common case: the container runtime
-detects the requested locale and generates it inside the container
-(`pv-locale-gen` lines in the log). If text still renders wrong, generate
-the locale on the host (`/etc/locale.gen` + `sudo locale-gen`) and retry.
+Forcing `HOST_LC_ALL` to a locale the host has not generated is worse than
+useless — some engines (the Emote/.NET one, e.g. `mlove`) exit in ~1s when
+it is set, while `LANG` alone runs fine. So `ak_locale_env` checks
+`locale -a` first and leaves `HOST_LC_ALL` unset (with a warning) when the
+locale is absent. The container's `pv-locale-gen` still generates the
+locale for the process, so text renders correctly either way; to silence the
+warning and take the `HOST_LC_ALL` path, add the locale to
+`/etc/locale.gen` and run `sudo locale-gen`. Set `ANIME4K_NO_HOST_LC_ALL=1`
+to never export `HOST_LC_ALL` (escape hatch if a title still dies with it).
 
 ## Interface notes
 

@@ -161,6 +161,29 @@ if [ -x "$_TDIR/textbox.py" ]; then
 else
   bad "translate/textbox.py missing or not executable"
 fi
+# The bridge only starts if Textractor is told to load it (SavedExtensions.txt),
+# and the native picker needs the tagged v2 build (docs/translate.md).
+_TX="$(ak_config_get prefix "")"
+[ -n "$_TX" ] || _TX="$HOME/.local/share/anime4k/prefixes/default"
+_SE="$_TX/drive_c/Textractor/x86/SavedExtensions.txt"
+if [ -f "$_SE" ]; then
+  if grep -q 'textractor_websocket_x86' "$_SE"; then
+    ok "Textractor bridge extension registered"
+  else
+    bad "Textractor bridge not registered in SavedExtensions.txt (run translate/install-textractor.sh)"
+  fi
+  if [ -f "$_TDIR/vendor/textractor_websocket_x86.fixed.dll" ] \
+     && [ -f "$_TX/drive_c/Textractor/x86/textractor_websocket_x86.xdll" ] \
+     && cmp -s "$_TDIR/vendor/textractor_websocket_x86.fixed.dll" \
+               "$_TX/drive_c/Textractor/x86/textractor_websocket_x86.xdll"; then
+    ok "v2 (tagged) bridge installed"
+  else
+    echo "note: stock text bridge installed — the in-app Text Hooker picker needs the v2 build (docs/translate.md)"
+  fi
+else
+  skip "Textractor not installed in $_TX (run install.sh translation step)"
+fi
+unset _TX _SE
 _QD="$(python3 -c "from PySide6.QtCore import QLibraryInfo; print(QLibraryInfo.path(QLibraryInfo.LibraryPath.QmlImportsPath))" 2>/dev/null || true)"
 _QMISSING=""
 if [ -z "$_QD" ]; then

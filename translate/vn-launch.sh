@@ -207,7 +207,7 @@ VGDIR="$(to_winpath "$GDIR")"
 GBASE="${VGAME##*\\}"
 seed_saved_hooks "$VGAME" "$HOOKCODE_FLAG"
 python3 - "$HERE/launch.vbs.template" "$PREFIX/drive_c/hook/$GAME.vbs" <<EOF
-import sys
+import re, sys
 t = open(sys.argv[1], 'rb').read().decode('utf-8')
 t = t.replace('@HOOKER_DIR@', r'C:\Textractor\x86')
 t = t.replace('@HOOKER_EXE@', r'C:\Textractor\x86\Textractor.exe')
@@ -215,13 +215,24 @@ t = t.replace('@HOOKER_STYLE@', '$HSTYLE')
 t = t.replace('@GAME_BASE@', r'$GBASE')
 t = t.replace('@GAME_DIR@', r'$VGDIR')
 t = t.replace('@GAME_EXE@', r'$VGAME')
-open(sys.argv[2], 'wb').write(t.replace('\n', '\r\n').encode('ascii'))
+# Wine's wscript only reads ASCII/ANSI .vbs (not UTF-16), so keep the file
+# ASCII and emit non-ASCII path characters as ChrW() concatenations instead
+# (handles e.g. Z:\home\dd\Área de trabalho\... ). docs/translate.md
+def esc(m):
+    return '" & ' + ' & '.join('ChrW(&h%04X)' % ord(c) for c in m.group(0)) + ' & "'
+t = re.sub(r'[^\x00-\x7f]+', esc, t)
+t = t.replace('\r\n', '\n').replace('\r', '\n').replace('\n', '\r\n')
+open(sys.argv[2], 'wb').write(t.encode('ascii'))
 print('rendered $GAME.vbs (hooker style $HSTYLE)')
 EOF
 export WINEPREFIX="$PREFIX"
 [ -n "$PROTON" ] && export PROTONPATH="$PROTON"
 export GAMEID
-export LANG="$LANG_SET" HOST_LC_ALL="$LANG_SET"
+if command -v ak_locale_env >/dev/null 2>&1; then
+  ak_locale_env "$LANG_SET"
+else
+  export LANG="$LANG_SET" HOST_LC_ALL="$LANG_SET"
+fi
 if command -v ak_wow64_env >/dev/null 2>&1; then ak_wow64_env "$PREFIX" "$WOW64"; fi
 # Filter: same vkBasalt mechanism as proton-anime4k.sh (variant conf + layer env).
 if [ "$FILTER" != "off" ]; then
@@ -243,6 +254,10 @@ if [ "$DRYRUN" = "1" ]; then
   exit 0
 fi
 echo "launching $GAME [$MODE] (end session with Ctrl-C)…"
+# cwd = game dir (same as proton-anime4k.sh): the engine loads its data files
+# relative to cwd, and WScript.Shell.CurrentDirectory is unreliable for
+# non-ASCII Windows paths (e.g. Z:\home\dd\Área de trabalho\...).
+cd "$GDIR" || { echo "cannot enter game dir: $GDIR" >&2; exit 1; }
 set -x
 # exec so the GUI's Stop terminates the container (no orphaned wineserver).
 exec "$UMU" "$PREFIX/drive_c/windows/system32/wscript.exe" "C:\\hook\\$GAME.vbs"

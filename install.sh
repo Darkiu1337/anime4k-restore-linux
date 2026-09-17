@@ -872,7 +872,7 @@ EOF
   unset _cfg_browser TRANSLATE_BROWSER_PICK
   TRANSLATE_BRIDGE="${TRANSLATE_BRIDGE:-fixed}"
   if confirm "install VN translation support (Textractor hook + DeepL bridge)?"; then
-    if "$ROOT/translate/fetch-vendor.sh" --bridge "$TRANSLATE_BRIDGE"; then
+    if bash "$ROOT/translate/fetch-vendor.sh" --bridge "$TRANSLATE_BRIDGE"; then
       "$ROOT/translate/install-textractor.sh" --bridge "$TRANSLATE_BRIDGE" \
         || echo "  textractor install failed (see above); re-run install.sh to retry"
     else
@@ -882,7 +882,7 @@ EOF
     echo "  skipped translation support (re-run install.sh to add later)"
   fi
   if confirm_no "install local DLX server binary (offline DeepL fallback on :1188)?"; then
-    if "$ROOT/translate/fetch-vendor.sh" --dlx; then
+    if bash "$ROOT/translate/fetch-vendor.sh" --dlx; then
       mkdir -p "$HOME/.local/bin"
       cp -f "$ROOT/translate/vendor/deeplx_linux_amd64" "$HOME/.local/bin/dlx"
       chmod +x "$HOME/.local/bin/dlx"
@@ -894,6 +894,16 @@ fi
 # PATH symlinks (default on): anime4k TUI + GUI entry point.
 if [ "$SYMLINK" = "1" ]; then
   mkdir -p "$HOME/.local/bin"
+  # A checkout that was moved/renamed after a previous install leaves dangling
+  # links here (the targets are absolute). Report them before repointing so a
+  # broken `anime4k`/`anime4k-gui` is never silent (docs/limits.md).
+  for _l in anime4k anime4k-gui vn-launch vn-textbox vn-translate; do
+    _p="$HOME/.local/bin/$_l"
+    if [ -L "$_p" ] && [ ! -e "$_p" ]; then
+      echo "note: ~/.local/bin/$_l was dangling (-> $(readlink "$_p")); repointing to $ROOT"
+    fi
+  done
+  unset _l _p
   ln -sf "$ROOT/scripts/anime4k" "$HOME/.local/bin/anime4k"
   if [ -f "$ROOT/gui/app.py" ]; then
     ln -sf "$ROOT/gui/app.py" "$HOME/.local/bin/anime4k-gui"

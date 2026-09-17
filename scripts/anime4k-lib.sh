@@ -37,6 +37,35 @@ ak_need() {
   command -v "$1" >/dev/null 2>&1 || ak_die "required tool '$1' not found on PATH"
 }
 
+# Locale handling for the game. HOST_LC_ALL is the pressure-vessel host-locale
+# hint: forcing a locale the host has not generated makes some engines
+# (Emote/.NET, e.g. mlove) exit in ~1s, while LANG alone is tolerated
+# (docs/limits.md). So HOST_LC_ALL is only exported for a locale the host can
+# actually provide; otherwise the caller is warned to generate it.
+ak_locale_available() {
+  local loc="$1" want
+  [ -n "$loc" ] || return 1
+  command -v locale >/dev/null 2>&1 || return 1
+  want="$(printf '%s' "$loc" | tr 'A-Z' 'a-z' | sed 's/\.utf-8$/.utf8/')"
+  locale -a 2>/dev/null | tr 'A-Z' 'a-z' | grep -qxF "$want"
+}
+
+ak_locale_env() {
+  local loc="$1"
+  [ -n "$loc" ] || return 0
+  export LANG="$loc"
+  if [ -n "${ANIME4K_NO_HOST_LC_ALL:-}" ]; then
+    unset HOST_LC_ALL
+    return 0
+  fi
+  if ak_locale_available "$loc"; then
+    export HOST_LC_ALL="$loc"
+  else
+    unset HOST_LC_ALL
+    ak_log "warning: locale $loc is not generated on this system; leaving HOST_LC_ALL unset so the game can start. To force the locale, add '$loc UTF-8' to /etc/locale.gen and run: sudo locale-gen"
+  fi
+}
+
 # New WoW64 (default): run 32-bit Windows PE inside the single 64-bit host
 # process, so Wine forwards its Vulkan calls to the 64-bit loader and the
 # 64-bit vkBasalt hooks 32-bit D3D9 too. Requires a 64-bit prefix; a legacy

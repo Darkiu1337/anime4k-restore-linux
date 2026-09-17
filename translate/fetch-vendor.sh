@@ -28,7 +28,7 @@ dl() { # dl <url> <sha256> <dest>
   fi
   echo "fetching $(basename "$dest")…"
   curl -fL --retry 3 -o "$tmp" "$url"
-  [ "$(sha256sum "$tmp" | cut -d' ' -f1)" = "$sha" ] || { echo "checksum MISMATCH: $dest" >&2; exit 1; }
+  [ "$(sha256sum "$tmp" 2>/dev/null | cut -d' ' -f1)" = "$sha" ] || { echo "checksum MISMATCH: $dest" >&2; rm -f "$tmp"; return 1; }
   mv "$tmp" "$dest"
 }
 
@@ -59,7 +59,9 @@ if [ "$BRIDGE" = "fixed" ]; then
   TAG="${TRANSLATE_RELEASE_TAG:-translate-v2}"
   FIXED_URL="https://github.com/Darkiu1337/anime4k-restore-linux/releases/download/${TAG}/textractor_websocket_x86.dll"
   if ! dl "$FIXED_URL" "$FIXED_SHA" "$VDIR/textractor_websocket_x86.fixed.dll"; then
-    echo "warning: fixed bridge asset unavailable (release '${TAG}' not published?); using stock" >&2
+    echo "warning: fixed bridge asset unavailable (release '${TAG}' not published?); using the stock bridge" >&2
+    echo "  the in-app Text Hooker picker needs v2: publish the '${TAG}' release asset, or drop the" >&2
+    echo "  DLL at $VDIR/textractor_websocket_x86.fixed.dll and re-run install-textractor.sh" >&2
   fi
 fi
 # Extract into the layout install-textractor.sh consumes (idempotent).

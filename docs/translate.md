@@ -78,13 +78,22 @@ stock-bridge installs simply keep following the selection). Manual control:
   Textractor yet the bridge stayed totally silent for minutes; unchecking
   everything but `textractor_websocket` restored tagged traffic instantly.
   A loaded translate ext can stall the whole sentence pipeline, so translate
-  in the textbox, never in Textractor.
+  in the textbox, never in Textractor. `install-textractor.sh` writes
+  `SavedExtensions.txt` = `textractor_websocket_x86>` (bridge-only) when the
+  bridge is missing from it, so the server actually starts on load.
+* **Non-ASCII game paths.** Wine's `wscript` reads ASCII/ANSI `.vbs` only —
+  a UTF-16 template silently does nothing. The renderer keeps the file ASCII
+  and emits non-ASCII path characters as `ChrW(&hXXXX)` concatenations, so
+  paths like `Z:\home\dd\Área de trabalho\...` work.
 * **Remove, don't deselect.** Unselected hooks stay inserted and keep
   processing. Four crashes with the GDI bulk inserted, zero Anim3-only —
   but bulk is *not* universally fatal (one title stable with everything),
   so removal is remedy, not ritual. Record per-game behavior.
 * **cwd decides engine detection.** Launchers must set each program's working
   directory (VBS `CurrentDirectory`); without it, engine hooks don't insert.
+  `WScript.Shell.CurrentDirectory` is unreliable for non-ASCII paths, so
+  `vn-launch.sh` also `cd`s into the game dir before `umu-run` (the VBS set is
+  best-effort, wrapped in `On Error Resume Next`).
 * **Never bare-TCP `:6677`.** The stock bridge panics the host on
   non-handshake connections (and on abrupt disconnects); every health check
   must complete a real websocket handshake. The hardened fork (default)

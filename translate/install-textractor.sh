@@ -36,6 +36,11 @@ FIXED=""
 for cand in "$VDIR/textractor_websocket_x86.fixed.dll" "$VDIR/bridge-fixed/textractor_websocket_x86.dll"; do
   [ -f "$cand" ] && FIXED="$cand" && break
 done
+if [ "$BRIDGE" = "fixed" ] && [ -z "$FIXED" ]; then
+  echo "warning: fixed bridge requested but no fixed DLL in $VDIR; using the stock bridge" >&2
+  echo "  the in-app Text Hooker picker needs v2 (or reveal Textractor via the wizard debug box)" >&2
+  BRIDGE="stock"
+fi
 if [ "$BRIDGE" = "fixed" ]; then
   [ -n "$FIXED" ] || { echo "fixed bridge requested but no fixed DLL in $VDIR (fetch with --bridge fixed)" >&2; exit 1; }
   cp -f "$FIXED" "$DST/textractor_websocket_x86.dll"
@@ -45,6 +50,18 @@ elif [ -f "$VDIR/ws-x86/textractor_websocket_x86.dll" ]; then
   cp -f "$VDIR/ws-x86/textractor_websocket_x86.dll" "$DST/textractor_websocket_x86.dll"
   cp -f "$VDIR/ws-x86/textractor_websocket_x86.dll" "$DST/textractor_websocket_x86.xdll"
   echo "bridge: stock 0.2.0"
+else
+  echo "error: no bridge DLL in $VDIR (run fetch-vendor.sh first)" >&2
+  exit 1
+fi
+# Textractor loads only the extensions listed (by file name, no .xdll) in
+# SavedExtensions.txt. Keep the set bridge-only: the bundled translate
+# extensions stall the sentence pipeline (docs/translate.md). Register the
+# websocket bridge when it is missing instead of clobbering a custom set.
+SE="$DST/SavedExtensions.txt"
+if ! grep -q 'textractor_websocket_x86' "$SE" 2>/dev/null; then
+  printf 'textractor_websocket_x86>' > "$SE"
+  echo "registered bridge extension (SavedExtensions.txt: bridge-only)"
 fi
 echo "installed Textractor x86 -> $DST ($(ls "$DST" | wc -l) entries)"
 for f in Textractor.exe TextractorCLI.exe texthook.dll textractor_websocket_x86.dll \
