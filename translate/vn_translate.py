@@ -31,20 +31,26 @@ def make_translator(use_cdp=True):
             cdp = BraveCDP(CONFIG)
             print("translate: Brave CDP ready", flush=True)
         except Exception as e:
-            print(f"translate: CDP unavailable ({e}), DLX only", flush=True)
-    from deepl_dlx import translate as dlx
+            print(f"translate: CDP unavailable ({e})", flush=True)
+
+    # DLX is an opt-in, experimental fallback that needs a local server.
+    dlx = None
+    if CONFIG.get("dlx_enabled"):
+        from deepl_dlx import translate as dlx
 
     def tr(text):
         if cdp is not None:
             try:
                 return cdp.translate(text), "cdp"
             except Exception as e:
-                print(f"translate: CDP failed ({e}), trying DLX", flush=True)
-        try:
-            return dlx(text, CONFIG["dlx_url"], CONFIG["srclang"].upper(),
-                       CONFIG["tgtlang"].upper()), "dlx"
-        except Exception as e:
-            return f"[translation failed: {e}]", "none"
+                print(f"translate: CDP failed ({e})", flush=True)
+        if dlx is not None:
+            try:
+                return dlx(text, CONFIG["dlx_url"], CONFIG["srclang"].upper(),
+                           CONFIG["tgtlang"].upper()), "dlx"
+            except Exception as e:
+                print(f"translate: DLX failed ({e})", flush=True)
+        return "[DeepL unavailable — retrying]", "none"
     return tr
 
 

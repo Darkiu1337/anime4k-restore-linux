@@ -21,6 +21,16 @@ if _REPO not in sys.path:
     sys.path.insert(0, _REPO)
 from core import process as _proc  # noqa: E402
 
+# A plain desktop UA: headless Brave reports "...HeadlessChrome/..." verbatim,
+# which trips DeepL's human check (docs/translate.md).
+DESKTOP_UA = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36")
+# DeepL's source editor: the host is a custom element, the real focusable /
+# contenteditable node is a child (focusing the host alone does not take).
+SOURCE_EDITABLE = ('document.getElementsByTagName("d-textarea")[0]'
+                   '.querySelector("[contenteditable=true]")')
+TARGET = 'document.getElementsByTagName("d-textarea")[1]'
+
 
 class BraveCDP:
     def __init__(self, config):
@@ -51,7 +61,21 @@ class BraveCDP:
                "--remote-allow-origins=*",
                f"--user-data-dir={self._profile_dir()}"]
         if self.config.get("browser_hidden", True):
-            cmd.append("--headless=new")
+            # Hidden from the user, but must not look headless or DeepL shows
+            # its clearance widget and refuses to translate.
+            cmd += ["--headless=new",
+                    "--user-agent=" + self.config.get("user_agent", DESKTOP_UA),
+                    "--disable-blink-features=AutomationControlled",
+                    "--lang=en-US",
+                    # New headless defaults to SwiftShader + background
+                    # throttling; use the real GPU (--use-angle=vulkan fails
+                    # headless here) and keep timers at full speed.
+                    "--enable-gpu",
+                    "--ignore-gpu-blocklist",
+                    "--disable-background-timer-throttling",
+                    "--disable-renderer-backgrounding",
+                    "--disable-backgrounding-occluded-windows",
+                    "--disable-features=CalculateNativeWinOcclusion"]
         cmd.append(self.config["deepl_url"])
         subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         for _ in range(100):
@@ -82,8 +106,16 @@ class BraveCDP:
         self._close_other_pages(base, use.get("id"))
         self._send(ws, "Page.navigate", {"url": self.config["deepl_url"]})
         self._wait_ready(ws)
-        self._activate(ws)
+        self._wait_editor(ws)
         return ws
+
+    def _reconnect(self):
+        """Recover a detached/closed CDP target (Inspector.detached)."""
+        try:
+            self.ws.close()
+        except Exception:
+            pass
+        self.ws = self._connect()
 
     def _new_tab(self, base):
         ver = requests.get(f"{base}/json/version", timeout=5).json()
@@ -119,24 +151,37 @@ class BraveCDP:
         except Exception:
             pass
 
-    def _activate(self, ws):
-        """DeepL only translates after real user activation, which headless
-        lacks; dispatch a click on the source box (harmless when visible)."""
-        try:
-            r = self._send(ws, "Runtime.evaluate", {"expression":
-                '(() => { const el = document.querySelector("d-textarea");'
-                ' if (!el) return null; const b = el.getBoundingClientRect();'
-                ' return JSON.stringify({x: b.x + b.width / 2, y: b.y + b.height / 2}); })()'})
-            pos = r.get("result", {}).get("value")
-            if not pos:
-                return
-            p = json.loads(pos)
-            for kind in ("mousePressed", "mouseReleased"):
-                self._send(ws, "Input.dispatchMouseEvent",
-                           {"type": kind, "x": p["x"], "y": p["y"],
-                            "button": "left", "clickCount": 1})
-        except Exception:
-            pass
+    def _wait_editor(self, ws, timeout=30):
+        """Wait until the source editor is in the DOM. DeepL's clearance
+        widget can overlay the page and steal focus, but it does not stop us
+        from setting the editor content + dispatching input events (see
+        _set_source), so focus readiness is deliberately not required."""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            try:
+                r = self._send(ws, "Runtime.evaluate", {
+                    "expression": f"!!({SOURCE_EDITABLE})"})
+                if r.get("result", {}).get("value"):
+                    return
+            except Exception:
+                pass
+            time.sleep(0.3)
+        raise RuntimeError("DeepL source editor never appeared")
+
+    def _set_source(self, ws, text):
+        """Set the source editor content and fire the input events DeepL
+        listens for. Works without focus/user-activation, so the clearance
+        widget cannot block it."""
+        lit = json.dumps(text)
+        expr = ('(() => { const el = %s; if (!el) return false;'
+                ' el.focus(); el.textContent = %s;'
+                ' for (const t of ["beforeinput", "input"])'
+                ' el.dispatchEvent(new InputEvent(t, {bubbles: true,'
+                ' inputType: "insertText", data: %s}));'
+                ' return true; })()'
+                % (SOURCE_EDITABLE, lit, lit))
+        r = self._send(ws, "Runtime.evaluate", {"expression": expr})
+        return bool(r.get("result", {}).get("value"))
 
     def _send(self, ws, method, params):
         with self.lock:
@@ -172,26 +217,22 @@ class BraveCDP:
             time.sleep(0.1)
         raise TimeoutError(f"no result for: {expr}")
 
-    def send_keys(self, text):
-        try:
-            self._send(self.ws, "Input.insertText", {"text": text})
-        except Exception:
-            for char in text:  # per-char fallback, mirrors Luna
-                self._send(self.ws, "Input.dispatchKeyEvent",
-                           {"type": "char", "text": char, "unmodifiedText": char})
-
     def translate(self, content):
+        try:
+            return self._translate_once(content)
+        except Exception:
+            self._reconnect()
+            return self._translate_once(content)
+
+    def _translate_once(self, content):
         ws = self.ws
-        self._send(ws, "Runtime.evaluate", {"expression":
-            'document.getElementsByTagName("d-textarea")[1].children[0].innerHTML = ""'})
-        self._send(ws, "Runtime.evaluate", {"expression":
-            'document.querySelector("#translator-source-clear-button").click()'})
-        self._send(ws, "Runtime.evaluate", {"expression":
-            'document.getElementsByTagName("d-textarea")[0].focus()'})
-        self.send_keys(content)
-        self.wait_for_result('document.getElementsByTagName("d-textarea")[1].textContent',
+        self._send(ws, "Runtime.evaluate", {
+            "expression": TARGET + '.children[0].innerHTML = ""'})
+        if not self._set_source(ws, content):
+            raise RuntimeError("DeepL source editor not found")
+        self.wait_for_result(TARGET + '.textContent',
                              timeout=self.config.get("cdp_timeout", 30))
-        return self.wait_for_result('document.getElementsByTagName("d-textarea")[1].innerText',
+        return self.wait_for_result(TARGET + '.innerText',
                                     timeout=self.config.get("cdp_timeout", 30))
 
 
