@@ -44,6 +44,9 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
 * **Three runners**: Proton/Windows games (D3D9–12, Vulkan), RPGMaker
   folders (MV/MZ filtered; other engines redirect), native Linux
   executables (Vulkan direct, OpenGL via Zink).
+* **32-bit D3D titles filter too**: the Proton runner defaults to Wine
+  new WoW64, so 32-bit games present a 64-bit Vulkan swapchain the layer
+  can hook (opt out per game with `wow64=0` if a title refuses it).
 * **Per-game library** (TUI + Qt Quick GUI sharing one JSON store): variant,
   GPU, fps cap, overlay, locale, prefix mode.
 * **Theme**: the GUI and the translation textbox use the KDE Quick Controls
@@ -121,8 +124,9 @@ are also appended to `~/.cache/anime4k/gui.log`.
   https://github.com/bakustarver/rpgmakermlinux-cicpoffs
 * Windows games launch through **umu-launcher** by Open-Wine-Components
   (`umu-run` backend): https://github.com/Open-Wine-Components/umu-launcher
-* Verified Proton is **Proton-CachyOS** by the CachyOS team (32-bit D3D
-  titles need it): https://github.com/CachyOS/proton-cachyos
+* Verified Proton is **Proton-CachyOS** by the CachyOS team (a safe
+  verified build; 32-bit D3D now filters through Wine new WoW64, the
+  runner default): https://github.com/CachyOS/proton-cachyos
 * D3D8/9/10/11 reach Vulkan through **DXVK** by doitsujin:
   https://github.com/doitsujin/dxvk
 * D3D12 reaches Vulkan through **VKD3D-Proton** by HansKristian-Work:

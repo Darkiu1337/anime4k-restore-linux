@@ -19,6 +19,8 @@ def validate_entry(data):
 
 def normalize_edit(data, prev):
     data["runner"] = prev.get("runner", data.get("runner", "proton"))
+    if "wow64" in prev:
+        data["wow64"] = prev["wow64"]
     tr_prev = prev.get("translate", {})
     tr = data.setdefault("translate", {})
     tr["hook_mode"] = tr_prev.get("hook_mode", "unknown")

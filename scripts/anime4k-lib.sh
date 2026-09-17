@@ -37,6 +37,26 @@ ak_need() {
   command -v "$1" >/dev/null 2>&1 || ak_die "required tool '$1' not found on PATH"
 }
 
+# New WoW64 (default): run 32-bit Windows PE inside the single 64-bit host
+# process, so Wine forwards its Vulkan calls to the 64-bit loader and the
+# 64-bit vkBasalt hooks 32-bit D3D9 too. Requires a 64-bit prefix; a legacy
+# win32 prefix (new WoW64-unsupported) keeps old WoW64. Opt out with
+# `wow64=0` / --no-wow64. Why: docs/limits.md.
+ak_wow64_env() {
+  local prefix="$1" want="${2:-1}"
+  if [ "$want" != "1" ]; then
+    ak_log "wow64: off (old WoW64 — 32-bit titles need a 32-bit vkBasalt)"
+    return 0
+  fi
+  if [ -f "$prefix/system.reg" ] && grep -qa '#arch=win32' "$prefix/system.reg"; then
+    ak_log "wow64: prefix is win32 — using old WoW64 (new WoW64 needs a 64-bit prefix)"
+    return 0
+  fi
+  export WINEARCH=wow64
+  export PROTON_USE_WOW64=1
+  ak_log "wow64: on (32-bit titles route through the 64-bit Vulkan loader)"
+}
+
 # Kill leftover processes of a previous run of the SAME game (best effort).
 # The token is matched against full command lines; the first character is
 # bracketed so pkill can never match our own command line. Own PID and

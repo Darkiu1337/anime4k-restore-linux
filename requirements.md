@@ -9,12 +9,12 @@ from upstream docs — confirmations welcome.
 |---|---|---|---|---|
 | python3 | `python` [verified] | `python3` | `python3` | JSON/config handling |
 | jq | `jq` [verified] | `jq` | `jq` | TUI library |
-| gum | AUR `charm-gum` or manual [verified via `gum`] | manual install | manual install | TUI only |
+| gum | `gum` [verified] | [charm repo](https://repo.charm.sh) or release `.deb` | `gum` | TUI only |
 | zenity | `zenity` [verified] | `zenity` | `zenity` | file pickers |
-| vkBasalt | AUR `vkbasalt`, else automated source build [verified: source build] | automated source build | automated source build | the filter runtime; `install.sh` handles both; verify with `anime4k doctor` |
+| vkBasalt | AUR `vkbasalt`, else automated source build [verified: source build] | `vkbasalt`, else source build | `vkBasalt`, else source build | the filter runtime; `install.sh` handles both; verify with `anime4k doctor` |
 | mangohud | `mangohud` [verified] | `mangohud` | `mangohud` | fps cap + overlay |
 | vulkan-tools | `vulkan-tools` [verified] | `vulkan-tools` | `vulkan-tools` | optional: device list, `vkcube` test |
-| icoextract | `icoextract` [verified] | manual (PyPI `icoextract`) | manual | game-icon extraction for the GUI |
+| icoextract | `icoextract` [verified] | `python3-icoextract` | `pip install icoextract` | game-icon extraction for the GUI |
 | git | `git` [verified] | `git` | `git` | cloning this repo |
 
 ## Per-runner optionals
@@ -22,7 +22,7 @@ from upstream docs — confirmations welcome.
 | Runner | Need | Notes |
 |---|---|---|
 | proton | `umu-launcher` (Arch multilib — installer handles it; enable multilib if missing; installer pre-installs the matching `lib32-vulkan-driver` provider from the detected GPU so pacman doesn't ask) or Faugus | provides `umu-run`; Steam Proton works too with adapted env |
-| proton | Proton-CachyOS (verified for 32-bit D3D) — offered by `./install.sh` (upstream release tarball, checksum-verified; x86_64_v3 on capable CPUs) | install once via the installer; selected automatically as the config default (override per-launch with `--proton`; other builds like GE-Proton work too with adapted env) |
+| proton | Proton-CachyOS (verified, recommended) — offered by `./install.sh` (upstream release tarball, checksum-verified; x86_64_v3 on capable CPUs) | 32-bit D3D is handled by Wine **new WoW64** (runner default; `WINEARCH=wow64` + `PROTON_USE_WOW64=1`), so CachyOS is no longer required for it. CachyOS remains the safest verified build and is seeded as the config default (override per-launch with `--proton`; other builds like GE-Proton work too). Disable new WoW64 per game with `wow64=0` for anti-cheat titles |
 | rpgmaker | `rpgmaker-linux` — offered by `./install.sh` (pinned upstream release) or the [upstream install script](https://github.com/bakustarver/rpgmakermlinux-cicpoffs) |
 | native | Mesa with Zink (Mesa ≥ 23) | for the GL→Vulkan translation path |
 

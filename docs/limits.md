@@ -8,15 +8,23 @@ a Vulkan swapchain**. Everything below follows from that.
 ### proton (Windows games)
 | API | Filter? | Notes |
 |---|---|---|
-| D3D9 / 10 / 11 (DXVK) | yes | the common case, verified (incl. 32-bit exes: Wine routes their Vulkan calls through its 64-bit loader, so the 64-bit layer still hooks them — but see the Proton note below) |
+| D3D9 / 10 / 11 (DXVK) | yes | the common case, verified (incl. 32-bit exes under new WoW64: Wine forwards their Vulkan calls to the 64-bit loader, so the 64-bit layer hooks them) |
 | D3D12 (VKD3D-Proton) | yes | same mechanism, verified compatible |
 | Native Vulkan | yes | passes straight through |
 | OpenGL (wined3d) / software / very old titles | no | game launches unfiltered, no error — if a title that filters on one machine doesn't on another, compare `PROTON_LOG=1` renderer lines and the DXVK device (`--dry-run` shows it) |
-| 32-bit executables | depends on the Proton build | Proton-CachyOS hooks 32-bit D3D9 (verified: 32-bit KiriKiri, 4 vkBasalt init blocks); UMU-Proton-10.0-4 was observed NOT hooking the same title (1 block — game process never creates a Vulkan instance) while 64-bit titles hook fine under both. If a 32-bit title stays unfiltered, pin a working Proton via `--proton` or the config `proton` default |
-| 32-bit native Linux binaries (not Proton) | no | our vkBasalt build is 64-bit only |
+| 32-bit executables | yes (new WoW64, default) | New WoW64 runs the 32-bit `.exe` inside the single 64-bit host process, so Wine forwards its Vulkan calls to the 64-bit loader and vkBasalt hooks it. Verified with a 32-bit D3D9 title (`mlove.exe`, UMU-Proton-10.0-4): old WoW64 = 32-bit process, 0 vkBasalt effects; new WoW64 = 64-bit process, `ReshadeEffect` created and applied. On by default; opt out with the runner's `--no-wow64` or per-game/config `wow64=0`. Old WoW64 needs a 32-bit vkBasalt (not shipped), so 32-bit titles stay unfiltered there |
+| 32-bit native Linux binaries (not Proton) | no | our vkBasalt build is 64-bit only; new WoW64 only helps Windows PE, not native ELF |
 
 Ren'Py Windows builds are auto-switched to the ANGLE (DirectX) renderer so
 they land on DXVK; override with `RENPY_RENDERER` if you know better.
+
+32-bit Windows titles use Wine's **new WoW64** by default: the runner exports
+`WINEARCH=wow64` + `PROTON_USE_WOW64=1`, the 32-bit PE code runs inside the
+64-bit host process, and the 64-bit vkBasalt sees the game's Vulkan swapchain.
+Wine 11 considers new WoW64 fully supported; Proton 10 (UMU-Proton) supports it
+behind the flag. Turn it off per game with `--no-wow64` / `"wow64": "0"` when a
+title (notably anti-cheat DRM) refuses new WoW64. A legacy `win32` prefix can't
+use it and the runner silently falls back to old WoW64 (unfiltered for 32-bit).
 
 ### rpgmaker (RPGMaker game folders)
 | Engine | Filter? | Notes |

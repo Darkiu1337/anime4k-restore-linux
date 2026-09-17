@@ -16,8 +16,15 @@
 set -e
 HERE="$(cd "$(dirname "$0")" && pwd)"
 REG="$HERE/translate.json"
+# Shared core (config, variants, vkBasalt, WoW64). Sourced early so --no-wow64
+# applies even with --filter off; docs/limits.md.
+AK_LIB="$(dirname "$HERE")/scripts/anime4k-lib.sh"
+if [ -f "$AK_LIB" ]; then
+  # shellcheck disable=SC1090
+  source "$AK_LIB"
+fi
 GAME=""; SETUP=0; CMD="launch"; FILTER="off"; DRYRUN=0
-EXE_FLAG=""; GAMEID_FLAG=""; LANG_FLAG=""; HOOKCODE_FLAG=""
+EXE_FLAG=""; GAMEID_FLAG=""; LANG_FLAG=""; HOOKCODE_FLAG=""; WOW64_FLAG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --game) GAME="$2"; shift 2 ;;
@@ -33,6 +40,8 @@ while [ $# -gt 0 ]; do
     --status) CMD="status"; shift ;;
     --list) CMD="list"; shift ;;
     --prefix) PREFIX_OVERRIDE="$2"; shift 2 ;;
+    --wow64) WOW64_FLAG=1; shift ;;
+    --no-wow64) WOW64_FLAG=0; shift ;;
     *) echo "unknown option: $1" >&2; exit 1 ;;
   esac
 done
@@ -57,6 +66,13 @@ PREFIX="$(python3 -c "import json; print(json.load(open('$HOME/.config/anime4k/c
 [ -n "$PREFIX" ] || PREFIX="$HOME/.local/share/anime4k/prefixes/default"
 [ -n "${PREFIX_OVERRIDE:-}" ] && PREFIX="$PREFIX_OVERRIDE"
 PROTON="$(python3 -c "import json; print(json.load(open('$HOME/.config/anime4k/config.json')).get('proton', ''))" 2>/dev/null || true)"
+if [ -n "$WOW64_FLAG" ]; then
+  WOW64="$WOW64_FLAG"
+elif command -v ak_config_get >/dev/null 2>&1; then
+  WOW64="$(ak_config_get wow64 1)"
+else
+  WOW64="1"
+fi
 UMU="$(command -v umu-run)" || { echo "umu-run not found" >&2; exit 1; }
 TRX="$PREFIX/drive_c/Textractor/x86/Textractor.exe"
 [ -f "$TRX" ] || "$HERE/install-textractor.sh" --prefix "$PREFIX"
@@ -175,12 +191,10 @@ export WINEPREFIX="$PREFIX"
 [ -n "$PROTON" ] && export PROTONPATH="$PROTON"
 export GAMEID
 export LANG="$LANG_SET" HOST_LC_ALL="$LANG_SET"
+if command -v ak_wow64_env >/dev/null 2>&1; then ak_wow64_env "$PREFIX" "$WOW64"; fi
 # Filter: same vkBasalt mechanism as proton-anime4k.sh (variant conf + layer env).
 if [ "$FILTER" != "off" ]; then
-  AK_LIB="${ANIME4K_ROOT:-$(dirname "$HERE")}/scripts/anime4k-lib.sh"
-  if [ -f "$AK_LIB" ]; then
-    # shellcheck disable=SC1090
-    source "$AK_LIB"
+  if command -v ak_vkbasalt_env >/dev/null 2>&1; then
     FILTER="$(ak_variant "$FILTER")"
     ak_vkbasalt_env "$FILTER"
     echo "filter=Anime4K-Restore-$FILTER conf=$VKBASALT_CONFIG_FILE"
@@ -191,7 +205,7 @@ if [ "$FILTER" != "off" ]; then
 fi
 if [ "$DRYRUN" = "1" ]; then
   echo "WINEPREFIX=$PREFIX PROTONPATH=${PROTON:-umu-managed} GAMEID=$GAMEID"
-  echo "game=$EXE lang=$LANG_SET filter=$FILTER dxvk=${DXVK_FILTER_DEVICE_NAME:-loader-default}"
+  echo "game=$EXE lang=$LANG_SET filter=$FILTER wow64=$([ "$WOW64" = "1" ] && echo on || echo off) dxvk=${DXVK_FILTER_DEVICE_NAME:-loader-default}"
   echo "vkbasalt=${VKBASALT_CONFIG_FILE:-off} layer=${VK_INSTANCE_LAYERS:-off}"
   printf 'umu-run %q %q\n' \
     "$PREFIX/drive_c/windows/system32/wscript.exe" "C:\\hook\\$GAME.vbs"

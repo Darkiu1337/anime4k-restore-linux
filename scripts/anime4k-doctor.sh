@@ -87,12 +87,25 @@ if [ -d "$_CDIR" ]; then
   if [ -n "$_found" ]; then
     ok "installed Protons: $_found"
   else
-    echo "note: no Proton builds in $_CDIR (umu auto-fetches UMU-Proton on first launch: 64-bit titles filter, 32-bit D3D may not — run install.sh for Proton-CachyOS)"
+    echo "note: no Proton builds in $_CDIR (umu auto-fetches UMU-Proton on first launch)"
   fi
 else
   echo "note: no compatibilitytools.d yet (umu auto-fetches UMU-Proton on first launch)"
 fi
 unset _CDIR _found _p
+# 32-bit / WoW64 posture (docs/limits.md).
+_w="$(ak_config_get wow64 1)"
+if [ "$_w" = "0" ]; then
+  echo "note: new WoW64 disabled (wow64=0) — 32-bit D3D needs Proton-CachyOS or a 32-bit vkBasalt"
+else
+  ok "new WoW64 default on (WINEARCH=wow64; 32-bit D3D filters through the 64-bit layer)"
+fi
+if ls /usr/lib32/libvkbasalt.so "$HOME/.local/lib32/libvkbasalt.so" >/dev/null 2>&1; then
+  ok "32-bit vkBasalt present (old WoW64 32-bit titles filter too)"
+else
+  echo "note: no 32-bit vkBasalt (old WoW64 32-bit titles stay unfiltered)"
+fi
+unset _w
 if command -v rpgmaker-linux >/dev/null 2>&1; then
   ok "rpgmaker-linux ($(rpgmaker-linux --version 2>/dev/null | head -n 1))"
 else

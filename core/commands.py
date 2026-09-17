@@ -22,11 +22,16 @@ def build_command(game):
     gpu = game.get("gpu", "auto (discrete GPU preferred)")
     pmode = game.get("prefix_mode", "shared")
     lang = game.get("lang", "")
+    wow64 = game.get("wow64", "")
     path = game["path"]
     if runner == "proton":
         argv = [os.path.join(paths.SCRIPTS_DIR, "proton-anime4k.sh"),
                 "--variant", variant, "--fps", fps,
                 "--prefix-mode", pmode if pmode in ("shared", "game") else "shared"]
+        if wow64 == "0":
+            argv.append("--no-wow64")
+        elif wow64 == "1":
+            argv.append("--wow64")
         if hud == "1":
             argv.append("--hud")
         if lang:
@@ -59,6 +64,10 @@ def build_translate_command(game, gid, setup=False):
     argv = [os.path.join(paths.TRANSLATE_DIR, "vn-launch.sh"),
             "--exe", game["path"], "--gameid", gid,
             "--filter", game.get("variant", "L")]
+    if game.get("wow64") == "0":
+        argv.append("--no-wow64")
+    elif game.get("wow64") == "1":
+        argv.append("--wow64")
     if game.get("lang"):
         argv += ["--lang", game["lang"]]
     hook = (game.get("translate") or {}).get("hook_code", "").strip()

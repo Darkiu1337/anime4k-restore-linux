@@ -12,7 +12,10 @@
 #   --prefix DIR         Wine prefix (default: shared project prefix, see --prefix-mode)
 #   --prefix-mode shared|game  shared ~/.local/share/anime4k/prefixes/default
 #                        versus per-game prefixes/<gameid> (default: shared)
-#   --proton NAME        Proton runner (default: umu-managed UMU-Proton)
+#   --proton NAME        Proton runner name/path; "umu" forces the umu-managed
+#                        UMU-Proton (default: config `proton`, else UMU-Proton)
+#   --no-wow64           old WoW64 (default new WoW64: 32-bit D3D9 filters
+#                        through the 64-bit layer; wine≥11/Proton; docs/limits.md)
 #   --gameid ID          umu GAMEID (default: derived from exe name)
 #   --dxvk-device NAME|auto   force DXVK onto a GPU (substring, e.g. "NVIDIA GeForce GTX 1650");
 #                        default: discrete GPU when detectable ("auto" forces the loader default)
@@ -40,6 +43,8 @@ FPS="60"
 HUD=0
 PREFIX_FLAG=""
 PROTON_FLAG=""
+WOW64_FLAG=""
+WOW64="1"
 PMODE="shared"
 PROTON=""
 GAMEID=""
@@ -57,6 +62,8 @@ while [ $# -gt 0 ]; do
     --prefix) PREFIX_FLAG="$2"; shift 2 ;;
     --prefix-mode) PMODE="$2"; shift 2 ;;
     --proton) PROTON_FLAG="$2"; shift 2 ;;
+    --wow64) WOW64_FLAG=1; shift ;;
+    --no-wow64) WOW64_FLAG=0; shift ;;
     --gameid) GAMEID="$2"; shift 2 ;;
     --dxvk-device) DXVK_DEV="$2"; shift 2 ;;
     --vkd3d-device) VKD3D_DEV="$2"; shift 2 ;;
@@ -115,15 +122,19 @@ if [ ! -d "$PREFIX" ]; then
   ak_log "prefix will be created on first launch: $PREFIX"
 fi
 # Proton: explicit flag > config file > umu-managed (unset = UMU-Proton auto).
-if [ -n "$PROTON_FLAG" ]; then
-  PROTON="$PROTON_FLAG"
-else
-  PROTON="$(ak_config_get proton "")"
-fi
+# "--proton umu" forces the umu-managed UMU-Proton even when config names another.
+case "$PROTON_FLAG" in
+  umu|umu-managed|default) PROTON=""; unset PROTONPATH ;;
+  "") PROTON="$(ak_config_get proton "")" ;;
+  *) PROTON="$PROTON_FLAG" ;;
+esac
+# WoW64: flag > config (default on) — docs/limits.md.
+if [ -n "$WOW64_FLAG" ]; then WOW64="$WOW64_FLAG"; else WOW64="$(ak_config_get wow64 1)"; fi
 
 export WINEPREFIX="$PREFIX"
 [ -n "$PROTON" ] && export PROTONPATH="$PROTON"
 export GAMEID
+ak_wow64_env "$PREFIX" "$WOW64"
 # Ren'Py: force ANGLE (DirectX) so it lands on DXVK (docs/limits.md);
 # pre-set RENPY_RENDERER to override.
 if [ -z "${RENPY_RENDERER:-}" ] && [ -d "$(dirname "$EXE")/renpy" ]; then
@@ -167,7 +178,7 @@ ak_vkbasalt_env "$VARIANT"
 
 if [ "$DRYRUN" = "1" ]; then
   echo "WINEPREFIX=$PREFIX PROTONPATH=${PROTON:-umu-managed} GAMEID=$GAMEID"
-  echo "filter=Anime4K-Restore-$VARIANT fps=$FPS hud=$HUD lang=${LANG_SET:-system} dxvk=${DXVK_FILTER_DEVICE_NAME:-loader-default} cwd=$PWD"
+  echo "filter=Anime4K-Restore-$VARIANT fps=$FPS hud=$HUD lang=${LANG_SET:-system} wow64=$([ "$WOW64" = "1" ] && echo on || echo off) dxvk=${DXVK_FILTER_DEVICE_NAME:-loader-default} cwd=$PWD"
   printf 'umu-run %q' "$EXE"
   if [ "${#GAME_ARGS[@]}" -gt 0 ]; then
     printf ' %q' "${GAME_ARGS[@]}"
