@@ -227,7 +227,11 @@ Settings come from `translate/config.json` and the games registry from
 `translate/translate.json` — both seeded from their `.sample` files on
 first install (never overwritten); the Python entry points also start on a
 bare clone by falling back to the samples/builtins. DLX server is opt-in
-(offline fallback on `:1188`). `requirements.md` lists every dependency per
+(offline fallback on `:1188`). `vn-launch.sh` resolves the shared
+`~/.config/anime4k/config.json` `proton` value the same way as the filter
+runner: an absolute path (or a bare name looked up under
+`compatibilitytools.d`); otherwise it falls back to the umu-managed
+UMU-Proton. `requirements.md` lists every dependency per
 distro. `install.sh --check-only` audits the translate deps too.
 
 ## Limits

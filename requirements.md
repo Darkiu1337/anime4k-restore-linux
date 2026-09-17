@@ -60,7 +60,11 @@ per-app in Settings. The top-bar **Settings** dialog also has a Proton picker
 (`core.system.list_protons()`): it lists the builds under the common
 `compatibilitytools.d` folders (Steam, Flatpak, `/usr`) with UMU-Proton
 pinned; a build without new WoW64 support is flagged and falls back to
-UMU-Proton at launch. There is no in-app theme switch. `anime4k-gui --diagnose`
+UMU-Proton at launch. The picker stores an **absolute path** in `proton`
+(`""` = umu-managed); `install.sh` seeds the verified build's path, and a bare
+or stale value is resolved by name — otherwise the runner falls back to
+UMU-Proton. `anime4k doctor` validates that the configured Proton resolves.
+There is no in-app theme switch. `anime4k-gui --diagnose`
 prints the resolved style, font and palette, and `--self-test` loads the whole
 UI headlessly (see README).
 

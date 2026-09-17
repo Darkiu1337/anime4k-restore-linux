@@ -29,7 +29,9 @@ created and applied. Wine 11 considers new WoW64 fully supported; Proton 10
 WoW64. A legacy `win32` prefix can't use it and the runner silently falls back
 to old WoW64 (unfiltered for 32-bit). If a selected Proton build has no new
 WoW64 support at all, the runner warns and falls back to the umu-managed
-UMU-Proton.
+UMU-Proton. The same fallback applies when the configured `proton` (an
+absolute path; `""` = umu-managed) can't be resolved — a bare name is looked
+up under `compatibilitytools.d`, otherwise the launch uses UMU-Proton.
 
 ### rpgmaker (RPGMaker game folders)
 | Engine | Filter? | Notes |
