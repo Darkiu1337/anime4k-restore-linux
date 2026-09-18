@@ -77,7 +77,11 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
   launch. **Setup Text Hooker for translation** runs the game and opens an
   in-app text-hook picker; **Textractor stays hidden** (our window is the only
   interface). Pressing **Translate** with no hook saved auto-runs Setup; once
-  a thread is picked, Translate plays directly. Details: `docs/translate.md`.
+  a thread is picked it starts translating immediately (the running textbox
+  follows the saved thread live — no restart). The textbox Top works on
+  Hyprland, KDE, X11 and (via a bundled Shell extension) GNOME, always by
+  changing stacking only — it never focuses a window or moves the pointer.
+  Details: `docs/translate.md`.
 
 ## Use cases
 

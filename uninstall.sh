@@ -36,6 +36,15 @@ for desk in anime4k.desktop anime4k-gui.desktop; do
     echo "removed desktop entry $desk"
   fi
 done
+# GNOME Shell extension for the textbox Top, if install.sh deployed it.
+_ak_ext="$HOME/.local/share/gnome-shell/extensions/vn-textbox-top@anime4k"
+if [ -d "$_ak_ext" ]; then
+  if command -v gnome-extensions >/dev/null 2>&1; then
+    gnome-extensions disable vn-textbox-top@anime4k 2>/dev/null || true
+  fi
+  rm -rf "$_ak_ext"
+  echo "removed GNOME Shell extension vn-textbox-top@anime4k"
+fi
 rm -f "$HOME/.config/anime4k"/vkbasalt-*.conf
 if [ -f "$HOME/.local/share/vkBasalt/.anime4k-installed" ]; then
   rm -f "$HOME/.local/share/vkBasalt/.anime4k-installed"

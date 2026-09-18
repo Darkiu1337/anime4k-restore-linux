@@ -220,6 +220,39 @@ else
   echo "note: org.kde.desktop QML style absent — GUI/textbox use the Fusion fallback (install qqc2-desktop-style)"
 fi
 unset _QD _QMISSING _m
+# Textbox always-on-top support for this session (stacking-only backends).
+_ak_wl=0
+case "${XDG_SESSION_TYPE:-}" in wayland) _ak_wl=1 ;; esac
+[ -n "${WAYLAND_DISPLAY:-}" ] && _ak_wl=1
+_ak_desk="$(printf '%s' "${XDG_CURRENT_DESKTOP:-${XDG_SESSION_DESKTOP:-}}" | tr '[:lower:]' '[:upper:]')"
+if [ "$_ak_wl" = "0" ]; then
+  ok "textbox Top: X11 keep-above hint (native)"
+else
+  case "$_ak_desk" in
+    *HYPRLAND*)
+      if command -v hyprctl >/dev/null 2>&1; then
+        ok "textbox Top: Hyprland (hyprctl pin/bring-to-top)"
+      else
+        bad "textbox Top: Hyprland session but hyprctl not found"
+      fi ;;
+    *KDE*)
+      if command -v qdbus6 >/dev/null 2>&1 || command -v qdbus >/dev/null 2>&1; then
+        ok "textbox Top: KDE KWin keep-above (qdbus present)"
+      else
+        bad "textbox Top: KDE session but qdbus/qdbus6 not found"
+      fi ;;
+    *GNOME*)
+      if command -v gnome-extensions >/dev/null 2>&1 \
+         && gnome-extensions list --enabled 2>/dev/null | grep -q 'vn-textbox-top@anime4k'; then
+        ok "textbox Top: GNOME Shell extension enabled"
+      else
+        skip "textbox Top: GNOME Wayland needs the Shell extension (re-run install.sh)"
+      fi ;;
+    *)
+      skip "textbox Top: unsupported on this Wayland compositor (Float still applies)" ;;
+  esac
+fi
+unset _ak_wl _ak_desk
 # GUI + textbox UI load smoke test (headless; no display needed).
 _GUI="$SCRIPT_DIR/../gui/app.py"
 if [ -f "$_GUI" ] && python3 -c "import PySide6" 2>/dev/null; then

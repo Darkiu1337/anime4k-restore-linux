@@ -6,8 +6,6 @@ Window behavior: see docs/translate.md (Textbox on Hyprland).
 """
 import json
 import os
-import shutil
-import subprocess
 import sys
 import threading
 import time
@@ -140,11 +138,12 @@ class Backend(QObject):
         self._chrome_autohide = False
         self._chrome_visible = True
         self._corner_radius = 10
-        self._home_ws = None
         self.last_text_time = time.time()
         self._placement = placement_mod.Placement()
         self._saved_geom = None
         self._window = None
+        self.gameid = ""       # live-follow this game's stored translate.thread
+        self.headless = False  # offscreen self-test: never touch the compositor
         self._title_h = 25
         self._tool_h = 27
         self._chrome_hovered = False
@@ -260,68 +259,24 @@ class Backend(QObject):
         except ValueError:
             return None
 
-    # ---- workspace-aware pin ----
-    @staticmethod
-    def _want_pinned(active_ws, home_ws, keepontop):
-        return bool(keepontop and home_ws is not None and active_ws == home_ws)
-
-    def _hyprctl_json(self, *args):
+    # ---- top enforcement (delegated to the compositor backend) ----
+    def sync_top(self):
+        """Apply Top through the backend (stacking only). Never focus/move."""
+        if self.headless:
+            return
         try:
-            out = subprocess.run(["hyprctl", *args, "-j"],
-                                 capture_output=True, text=True,
-                                 timeout=5).stdout
-            return json.loads(out)
+            self._placement.set_top(self._keepontop)
         except Exception:
-            return None
+            pass
 
-    def pin_tick(self):
-        # Workspace-aware Top enforcement, ~1s (see docs/translate.md).
+    def _sync_top_deferred(self):
+        self.sync_top()
+        QTimer.singleShot(500, self.sync_top)
+        QTimer.singleShot(1500, self.sync_top)
+
+    def shutdown_compositor(self):
         try:
-            if (not shutil.which("hyprctl")
-                    or not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE")):
-                return
-            clients = self._hyprctl_json("clients")
-            active = self._hyprctl_json("activeworkspace")
-            if not isinstance(clients, list) or not isinstance(active, dict):
-                return
-            me = None
-            for c in clients:
-                try:
-                    if int(c.get("pid", -1)) == os.getpid():
-                        me = c
-                        break
-                except (TypeError, ValueError):
-                    continue
-            if me is None:
-                return
-            ws = (me.get("workspace") or {}).get("id")
-            if ws is None:
-                return
-            # Edge-triggered home adoption only (see docs/translate.md).
-            last_pinned = getattr(self, "_last_pinned", None)
-            prev_ws = getattr(self, "_last_ws", None)
-            if ws != self._home_ws:
-                if self._home_ws is None or (not last_pinned and ws != prev_ws):
-                    self._home_ws = ws
-            self._last_ws = ws
-            self._last_pinned = bool(me.get("pinned", False))
-            # Floating is a hard requirement (overlay), Top or not; re-apply
-            # if something tiled it (e.g. a manual toggle).
-            if not me.get("floating", False):
-                self._hyprctl_float()
-                return
-            want = self._want_pinned(active.get("id"), self._home_ws,
-                                     self._keepontop)
-            if bool(me.get("pinned", False)) != want:
-                action = "enable" if want else "disable"
-                subprocess.run(["hyprctl", "dispatch",
-                                f'hl.dsp.window.pin({{window="title:^vn-translate$", action="{action}"}})'],
-                               capture_output=True, timeout=5)
-                if want:
-                    subprocess.run(["hyprctl", "dispatch",
-                                    'hl.dsp.window.bring_to_top({window="title:^vn-translate$"})'],
-                                   capture_output=True, timeout=5)
-                # Never move the window (see docs/translate.md).
+            self._placement.shutdown()
         except Exception:
             pass
 
@@ -344,9 +299,9 @@ class Backend(QObject):
         _saved = self._saved_geom
         QTimer.singleShot(0, lambda: self._placement.after_map(_saved))
         # Always float (a tiled overlay is useless); Top additionally
-        # pins/raises. Top-off unpins (also neutralizes a stale session rule).
-        self._hyprctl_float_deferred()
-        self._hyprctl_sync_top_deferred()
+        # raises/keeps above. Top-off un-raises (also neutralizes a stale rule).
+        # The backend is stacking-only: it never focuses or moves the window.
+        self._sync_top_deferred()
         self.drain_timer = QTimer(self)
         self.drain_timer.timeout.connect(self.drain)
         self.drain_timer.start(120)
@@ -360,8 +315,15 @@ class Backend(QObject):
         self.hide_timer.timeout.connect(self.hide_tick)
         self.hide_timer.start(500)
         self.pin_timer = QTimer(self)
-        self.pin_timer.timeout.connect(self.pin_tick)
+        self.pin_timer.timeout.connect(
+            lambda: None if self.headless
+            else self._placement.tick(self._keepontop))
         self.pin_timer.start(1000)
+        # Live-follow the game's stored translate.thread so picking a hook in
+        # the Setup picker takes effect without restarting the session.
+        self.thread_timer = QTimer(self)
+        self.thread_timer.timeout.connect(self.sync_thread)
+        self.thread_timer.start(1000)
 
     @Slot(float, float)
     def setChromeGeometry(self, title_h, tool_h):
@@ -417,12 +379,17 @@ class Backend(QObject):
             return
         # Bars-only mask architecture (see docs/translate.md); never
         # WindowTransparentForInput on Wayland (drops all mask updates).
-        if self._on_wayland():
+        on_wayland = self._on_wayland()
+        if on_wayland:
             want_transparent = False
         else:
             want_transparent = self.clickthrough_effective
-        flags = (Qt.FramelessWindowHint | Qt.Tool | Qt.WindowStaysOnTopHint
-                 if self._keepontop else Qt.FramelessWindowHint | Qt.Tool)
+        # On Wayland never toggle WindowStaysOnTopHint: it is ignored, and
+        # setFlags() on a mapped window re-creates it (a focus-steal vector).
+        # Top there is enforced by the compositor backend (sync_top).
+        flags = Qt.FramelessWindowHint | Qt.Tool
+        if self._keepontop and not on_wayland:
+            flags |= Qt.WindowStaysOnTopHint
         if want_transparent:
             flags |= Qt.WindowTransparentForInput
         if initial or int(flags) != getattr(self, "_flags_applied", None):
@@ -513,11 +480,18 @@ class Backend(QObject):
     def toggleTop(self):
         self._keepontop = not self._keepontop
         if self._keepontop:
-            self._home_ws = None
+            try:
+                self._placement.reset_home()
+            except Exception:
+                pass
+            if not getattr(self._placement, "supports_top", True):
+                self._status_text = (f"Top unsupported here "
+                                     f"({self._placement.name})")
+                self.statusTextChanged.emit()
         self._ct_applied = None
         self._mask_applied = None
         self.apply_flags()
-        self._hyprctl_sync_top_deferred()
+        self._sync_top_deferred()
         QTimer.singleShot(800, self.apply_input_mask)
 
     @Slot()
@@ -527,64 +501,7 @@ class Backend(QObject):
         self._mask_applied = None
         self.apply_flags()
         if self._keepontop:
-            self._hyprctl_sync_top_deferred()
-
-    def _hyprctl_sync_top_deferred(self):
-        if self._keepontop:
-            self._hyprctl_sync_top()
-            QTimer.singleShot(500, self._hyprctl_sync_top)
-            QTimer.singleShot(1500, self._hyprctl_sync_top)
-        else:
-            self._hyprctl_unpin()
-            QTimer.singleShot(500, self._hyprctl_unpin)
-
-    def _hyprctl_ready(self):
-        return (shutil.which("hyprctl")
-                and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"))
-
-    def _dispatch(self, cmd):
-        if not self._hyprctl_ready():
-            return
-        try:
-            subprocess.run(["hyprctl", "dispatch", cmd],
-                           capture_output=True, timeout=5)
-        except Exception:
-            pass
-
-    def _hyprctl_float(self):
-        self._dispatch('hl.dsp.window.float({window="title:^vn-translate$", action="enable"})')
-
-    def _hyprctl_float_deferred(self):
-        self._hyprctl_float()
-        QTimer.singleShot(500, self._hyprctl_float)
-        QTimer.singleShot(1500, self._hyprctl_float)
-
-    def _hyprctl_unpin(self):
-        self._dispatch('hl.dsp.window.pin({window="title:^vn-translate$", action="disable"})')
-
-    def _hyprctl_sync_top(self):
-        # Float + raise + unpin (see docs/translate.md).
-        self._hyprctl_float()
-        self._hyprctl_unpin()
-        self._dispatch('hl.dsp.window.bring_to_top({window="title:^vn-translate$"})')
-
-    def _hyprctl_raise(self):
-        if not self._keepontop:
-            return
-        now = time.time()
-        if now - getattr(self, "_last_raise", 0) < 2.0:
-            return
-        self._last_raise = now
-        if not shutil.which("hyprctl"):
-            return
-        if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
-            return
-        try:
-            subprocess.run(["hyprctl", "dispatch",
-                            'hl.dsp.window.bring_to_top({window="title:^vn-translate$"})'],
-                           capture_output=True, timeout=5)
-        except Exception:
-            pass
+            self._sync_top_deferred()
 
     @Slot()
     def toggleMode(self):
@@ -726,7 +643,31 @@ class Backend(QObject):
                 self._window.show()
         except Exception:
             pass
-        self._hyprctl_raise()
+        try:
+            self._placement.raise_window(self._keepontop)
+        except Exception:
+            pass
+
+    # ---- live thread sync (pick a hook without restarting) ----
+    def sync_thread(self):
+        """Follow this game's stored translate.thread live, so the Setup picker
+        takes effect on the running backend instead of only next launch."""
+        if not self.gameid:
+            return
+        try:
+            from core import store
+            games = store.load_games()
+            tr = (games.get(self.gameid) or {}).get("translate") or {}
+            thread = (tr.get("thread") or "").strip() or "*"
+        except Exception:
+            return
+        if thread == self.thread:
+            return
+        self.thread = thread
+        self.last_ja = ""  # do not suppress the new thread's first line
+        self._status_text = (f"● live (thread {thread})" if thread != "*"
+                             else "● live (auto)")
+        self.statusTextChanged.emit()
 
     # ---- pipeline (hook thread -> translator thread -> GUI model) ----
     def ensure_workers(self):
@@ -748,7 +689,8 @@ class Backend(QObject):
         while True:
             try:
                 listen(CONFIG.get("hook_url", "ws://localhost:6677"),
-                       on_message=self.ja_queue.append, thread=self.thread)
+                       on_message=self.ja_queue.append,
+                       thread=lambda: self.thread)
             except Exception as e:
                 self.pending.append((None, f"[hook error: {e}]"))
             _time.sleep(5)
@@ -789,7 +731,10 @@ class Backend(QObject):
     def poll_status(self):
         if core_process.translate_bridge_ok():
             if not self.pending:
-                self._status_text = "● live (:6677)"
+                if self.thread not in ("", "*"):
+                    self._status_text = f"● live (thread {self.thread})"
+                else:
+                    self._status_text = "● live (:6677)"
                 self.statusTextChanged.emit()
         else:
             self._status_text = "● stopped"
@@ -845,20 +790,11 @@ def self_test(backend, window):
             raise
         except Exception:
             pass
-    import shutil as _shutil
-    import subprocess as _sp
-    _real_which, _real_run = _shutil.which, _sp.run
-    try:
-        _shutil.which = lambda *a, **k: None
-        backend._hyprctl_sync_top()
-        _shutil.which = lambda *a, **k: "/usr/bin/hyprctl"
-
-        def _boom(*a, **k):
-            raise OSError("no compositor")
-        _sp.run = _boom
-        backend._hyprctl_sync_top()
-    finally:
-        _shutil.which, _sp.run = _real_which, _real_run
+    # Compositor backend selection is coherent and never raises.
+    _bf = placement_mod.detect()
+    assert isinstance(_bf, placement_mod.Placement), "detect must return a Placement"
+    assert isinstance(_bf.supports_top, bool), "supports_top must be boolean"
+    assert isinstance(_bf.enforces_top, bool), "enforces_top must be boolean"
     backend.toggleAutohide()
     backend.clearHistory()
     assert backend.pairs.rowCount() == 0, "clearHistory failed"
@@ -1006,106 +942,153 @@ def self_test(backend, window):
     _QTest2.qWait(600)
     assert abs(float(_view.property("contentY")) - _mid) < 2.0, \
         "dragged readers must stay put"
-    _view.setProperty("contentY", float(_view.property("contentHeight")))
+    # Scroll to the last *valid* position (max = contentHeight - height; using
+    # contentHeight itself is out of range and makes the latch see a decrease).
+    _max_y = max(0.0, float(_view.property("contentHeight"))
+                 - float(_view.property("height")))
+    _view.setProperty("contentY", _max_y)
     _QTest2.qWait(200)
     backend.append_pair("再開", "line after scrolling back down")
     _QTest2.qWait(600)
     assert bool(_view.property("atYEnd")), "must resume following at the end"
-    # Pin decision matrix.
-    W = Backend._want_pinned
-    assert W(1, 1, True) is True, "same workspace + Top must pin"
-    assert W(2, 1, True) is False, "other workspace must unpin"
-    assert W(1, 1, False) is False, "Top off must never pin"
-    assert W(1, None, True) is False, "unknown home must not pin"
-    # Compositor radius query degrades to None/valid-int, never raises.
-    _r = Backend._query_compositor_radius()
-    assert _r is None or (isinstance(_r, int) and 0 <= _r <= 16), "radius query must be None or 0..16"
-    # pin_tick with a canned compositor.
-    _real_json, _real_run = backend._hyprctl_json, subprocess.run
+    # Compositor control is STACKING-ONLY: it must never focus/activate, move
+    # or warp. (KDE Focus-follows-mouse warps the cursor on activation.)
+    import tempfile
+    import placement as _pm
     _calls = []
+
+    # KWin script code: keepAbove only, no focus/activate/move/warp tokens
+    # (comments are excluded so the warning text can name them).
+    for _keep, _want in ((True, "true"), (False, "false")):
+        _js = _pm.KdePlacement._script(_keep)
+        assert f"w.keepAbove = {_want}" in _js, "KDE script must set keepAbove"
+        _code = "\n".join(l for l in _js.splitlines()
+                          if not l.strip().startswith("//"))
+        for _bad in ("activeWindow", "activate", "raiseWindow", "geometry",
+                     "move", "cursor", "focus", "warp"):
+            assert _bad not in _code, f"KDE script must never contain {_bad!r}"
+    # KDE set_top is idempotent (loads once per real state change).
+    _kde = _pm.KdePlacement()
+    _kde._write_script = lambda keep: True
+    _kde._qdbus = lambda *a: (_calls.append(a), 0)[1]
+    _kde.set_top(True)
+    _kde.set_top(True)
+    assert sum(1 for c in _calls if c[0] == "loadScript") == 1, \
+        "KDE must load the script once per state change"
+    _calls.clear()
+
+    # Hyprland top enforcement with a canned compositor; every dispatch is a
+    # stacking/float verb and forbidden focus/move verbs are dropped.
+    _hy = _pm.HyprlandPlacement()
+    _hy._ready = lambda: True
+    _real_run = _pm._run
+    _world = {"pinned": False, "ws": 1, "active": 1}
+
+    def _fake_run(argv, timeout=5):
+        _calls.append(argv)
+        s = str(argv)
+        if "action=\"disable\"" in s:
+            _world["pinned"] = False
+        elif "action=\"enable\"" in s:
+            _world["pinned"] = True
+        return None
+
     try:
-        backend._hyprctl_json = lambda *a: (
-            [{"pid": os.getpid(), "workspace": {"id": 1},
-              "pinned": False, "floating": True}]
-            if a == ("clients",) else {"id": 1})
-        subprocess.run = lambda *a, **k: (_calls.append(a[0]), None)[1]
-        backend._keepontop = True
-        backend._home_ws = None
-        backend.pin_tick()
-        assert backend._home_ws == 1, "pin_tick must adopt home workspace"
+        _pm._run = _fake_run
+        _hy._json = lambda *a: (
+            [{"pid": os.getpid(), "workspace": {"id": _world["ws"]},
+              "pinned": _world["pinned"], "floating": True}]
+            if a == ("clients",) else {"id": _world["active"]})
+        # Pin decision matrix.
+        W = _hy._want_pinned
+        assert W(1, 1, True) is True, "same workspace + Top must pin"
+        assert W(2, 1, True) is False, "other workspace must unpin"
+        assert W(1, 1, False) is False, "Top off must never pin"
+        assert W(1, None, True) is False, "unknown home must not pin"
+        # Own workspace + Top -> pin enable/adopt.
+        _hy.home_ws = None
+        _hy.tick(True)
+        assert _hy.home_ws == 1, "tick must adopt home workspace"
         assert any("action=\"enable\"" in str(c) for c in _calls), \
-            f"mismatch must dispatch pin enable, got {_calls}"
+            "mismatch must dispatch pin enable"
+        # Already pinned -> no dispatch.
         _calls.clear()
-        backend._hyprctl_json = lambda *a: (
-            [{"pid": os.getpid(), "workspace": {"id": 1},
-              "pinned": True, "floating": True}]
-            if a == ("clients",) else {"id": 1})
-        backend.pin_tick()
+        _hy.tick(True)
         assert _calls == [], "matching state must not dispatch"
-        backend._hyprctl_json = lambda *a: (
-            [{"pid": os.getpid(), "workspace": {"id": 1},
-              "pinned": True, "floating": True}]
-            if a == ("clients",) else {"id": 2})
-        backend.pin_tick()
+        # Leaving home -> unpin.
+        _world["active"] = 2
+        _hy.tick(True)
         assert any("action=\"disable\"" in str(c) for c in _calls), \
             "leaving home must dispatch pin disable"
         # Follow-residue must not re-adopt home.
         _calls.clear()
-        backend._home_ws = 1
-        backend._last_pinned = True
-        backend._hyprctl_json = lambda *a: (
-            [{"pid": os.getpid(), "workspace": {"id": 2},
-              "pinned": True, "floating": True}]
-            if a == ("clients",) else {"id": 2})
-        backend.pin_tick()
-        assert backend._home_ws == 1, "follow-residue must keep the old home"
-        assert any("action=\"disable\"" in str(c) for c in _calls), \
-            "follow-residue must still unpin"
-        assert not any("move" in str(c) for c in _calls), \
-            "must never move windows: the compositor flips the active " \
-            "workspace to follow the move, looping forever"
-        # Stable mismatch must never re-adopt.
-        _world = {"pinned": True, "ws": 2, "active": 2}
-        backend._hyprctl_json = lambda *a: (
-            [{"pid": os.getpid(), "workspace": {"id": _world["ws"]},
-              "pinned": _world["pinned"], "floating": True}]
-            if a == ("clients",) else {"id": _world["active"]})
-        _orig_run = subprocess.run
-
-        def _fake_run(cmd, **k):
-            s = str(cmd)
-            if "action=\"disable\"" in s:
-                _world["pinned"] = False
-            elif "action=\"enable\"" in s:
-                _world["pinned"] = True
-            _calls.append(cmd)
-            return None
-
-        subprocess.run = _fake_run
-        backend.pin_tick()
-        backend.pin_tick()
-        assert backend._home_ws == 1, "stable mismatch must never re-adopt"
-        assert _world["pinned"] is False, "stable mismatch must stay unpinned"
-        subprocess.run = _orig_run
-        # Genuine user move adopts the new home.
+        _hy.home_ws = 1
+        _hy.last_pinned = True
+        _world["ws"], _world["active"] = 2, 2
+        _hy.tick(True)
+        assert _hy.home_ws == 1, "follow-residue must keep the old home"
+        # Genuine user move adopts the new home (ws edge while unpinned).
         _calls.clear()
-        backend._last_ws = 1
-        backend._last_pinned = False
-        backend._hyprctl_json = lambda *a: (
-            [{"pid": os.getpid(), "workspace": {"id": 2},
-              "pinned": False, "floating": True}]
-            if a == ("clients",) else {"id": 1})
-        backend.pin_tick()
-        assert backend._home_ws == 2, "user move must adopt the new home"
-        # Top re-enable clears home.
-        backend._keepontop = False
-        backend.toggleTop()
-        assert backend._keepontop is True and backend._home_ws is None, \
-            "Top enable must clear home for re-adoption"
+        _hy.last_ws = 1
+        _hy.last_pinned = False
+        _world["pinned"] = False
+        _hy.tick(True)
+        assert _hy.home_ws == 2, "user move must adopt the new home"
+        # Every dispatched command is stacking-only.
+        _flat = [c[2] for c in _calls if len(c) > 2]
+        assert _flat, "expected at least one dispatched command"
+        for _c in _flat:
+            _low = _c.lower()
+            assert (any(_low.startswith(a) for a in _pm.HyprlandPlacement.ALLOWED_DISPATCH)), \
+                f"non-stacking dispatch: {_c!r}"
+            for _bad in ("focus", "cursor", "movewindow", "moveactive",
+                         "resize", "activate", "active"):
+                assert _bad not in _low, f"focus/move dispatch: {_c!r}"
+        # Forbidden dispatches are silently dropped.
+        _calls.clear()
+        _hy._dispatch('hl.dsp.window.focuswindow({window="title:^vn-translate$"})')
+        _hy._dispatch('hl.dsp.window.movecursor({x=1, y=1})')
+        _hy._dispatch('hl.dsp.window.movewindow({window="title:^vn-translate$"})')
+        assert _calls == [], "focus/move/cursor dispatches must be dropped"
     finally:
-        backend._hyprctl_json, subprocess.run = _real_json, _real_run
+        _pm._run = _real_run
+
+    # GNOME: the only side effect is the state file (never activate/warp).
+    _gn = _pm.GnomePlacement()
+    _gn.supports_top = True
+    _real_state = _pm.GNOME_STATE
+    _tmp_state = os.path.join(tempfile.mkdtemp(), "gnome-top")
+    _pm.GNOME_STATE = _tmp_state
+    try:
+        _gn.set_top(True)
+        assert open(_tmp_state).read().strip() == "1", "GNOME Top on writes state"
+        _gn.set_top(False)
+        assert open(_tmp_state).read().strip() == "0", "GNOME Top off writes state"
+    finally:
+        _pm.GNOME_STATE = _real_state
+
+    # Compositor radius query degrades to None/valid-int, never raises.
+    _r = Backend._query_compositor_radius()
+    assert _r is None or (isinstance(_r, int) and 0 <= _r <= 16), "radius query must be None or 0..16"
+
+    # Live hook switch: stored thread is picked up without a restart.
+    import json as _json2
+    from core import paths as _paths
+    _orig_games_json = _paths.GAMES_JSON
+    _tmp_j = os.path.join(tempfile.mkdtemp(), "games.json")
+    with open(_tmp_j, "w") as _f:
+        _json2.dump({"games": {"unit": {"translate": {"thread": "Anim3"}}}}, _f)
+    _paths.GAMES_JSON = _tmp_j
+    try:
+        backend.gameid = "unit"
+        backend.thread = "*"
+        backend.sync_thread()
+        assert backend.thread == "Anim3", "sync_thread must follow the store"
+    finally:
+        _paths.GAMES_JSON = _orig_games_json
+        backend.gameid = ""
+
     # Session purge: only ever touches an isolated automation profile.
-    import tempfile
     _cp = core_process
     tmp = tempfile.mkdtemp()
     prof = os.path.join(tmp, "brave-cdp-profile")
@@ -1138,11 +1121,17 @@ def main():
     # cleanly (tabs closed, no session restore) so nothing lingers.
     app.aboutToQuit.connect(core_process.close_translator_browser)
     backend = Backend(app)
+    app.aboutToQuit.connect(backend.shutdown_compositor)
     args = sys.argv[1:]
     if "--thread" in args and args.index("--thread") + 1 < len(args):
         backend.thread = args[args.index("--thread") + 1]
+    if "--gameid" in args and args.index("--gameid") + 1 < len(args):
+        backend.gameid = args[args.index("--gameid") + 1]
     headless = "--self-test" in sys.argv or "--smoke-test" in sys.argv
-    placement = placement_mod.detect()
+    backend.headless = headless
+    # Offscreen tests must never poke the real compositor.
+    placement = (placement_mod.Placement() if headless
+                 else placement_mod.detect())
     try:
         from PySide6.QtCore import QSettings
         raw = QSettings(ORG, APP).value("compositor_geometry")

@@ -89,7 +89,7 @@ ApplicationWindow {
                         font.pointSize: 9
                         Layout.fillWidth: true
                     }
-                    BarButton { text: "Top"; checkable: true; checked: backend.keepOnTop; tip: "Keep on top (Hyprland: also pins the window)"; onClicked: backend.toggleTop() }
+                    BarButton { text: "Top"; checkable: true; checked: backend.keepOnTop; tip: "Keep on top (compositor-enforced; never steals focus)"; onClicked: backend.toggleTop() }
                     BarButton { text: "Click"; checkable: true; checked: backend.clickThrough; tip: "Click-through (hover either bar to click)"; onClicked: backend.toggleClickthrough() }
                     BarButton { text: "_"; tip: "Minimize"; onClicked: backend.minimize() }
                     BarButton { text: "x"; tip: "Close"; onClicked: root.close() }

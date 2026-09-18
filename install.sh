@@ -895,6 +895,59 @@ EOF
       echo "installed dlx to ~/.local/bin/dlx (run 'dlx' to serve :1188)"
     fi
   fi
+
+  # Textbox always-on-top: detected per session. The runtime backends need no
+  # install (Hyprland hyprctl / KDE qdbus6); GNOME Wayland needs an optional
+  # Shell extension. X11 uses Qt's native keep-above hint. See docs/translate.md.
+  _ak_gnome_top() {
+    local src="$ROOT/translate/gnome-extension/vn-textbox-top@anime4k"
+    local dst="$HOME/.local/share/gnome-shell/extensions/vn-textbox-top@anime4k"
+    [ -d "$src" ] || return 0
+    if ! command -v gnome-extensions >/dev/null 2>&1; then
+      echo "  note: gnome-extensions CLI missing; textbox Top stays unsupported"
+      return 0
+    fi
+    if [ "$CHECK_ONLY" = "1" ] || [ "$DRY_RUN" = "1" ]; then
+      echo "  would install GNOME Shell extension vn-textbox-top@anime4k"
+      return 0
+    fi
+    if ! confirm_no "install the GNOME Shell extension for textbox always-on-top? (may need re-login)"; then
+      echo "  skipped; textbox Top stays unsupported on GNOME Wayland"
+      return 0
+    fi
+    mkdir -p "$dst"
+    cp -f "$src/metadata.json" "$src/extension.js" "$dst/" 2>/dev/null || true
+    if gnome-extensions enable vn-textbox-top@anime4k 2>/dev/null; then
+      echo "  enabled vn-textbox-top@anime4k (log out/in if it does not activate)"
+    else
+      echo "  installed; enable it in Extensions or: gnome-extensions enable vn-textbox-top@anime4k"
+      echo "  note: on GNOME Wayland a log out/in may be required"
+    fi
+  }
+  _ak_wayland=0
+  case "${XDG_SESSION_TYPE:-}" in wayland) _ak_wayland=1 ;; esac
+  [ -n "${WAYLAND_DISPLAY:-}" ] && _ak_wayland=1
+  _ak_desk="$(printf '%s' "${XDG_CURRENT_DESKTOP:-${XDG_SESSION_DESKTOP:-}}" | tr '[:lower:]' '[:upper:]')"
+  if [ "$_ak_wayland" = "0" ]; then
+    echo "textbox Top: X11 keep-above hint (native)"
+  else
+    case "$_ak_desk" in
+      *HYPRLAND*)
+        echo "textbox Top: Hyprland (hyprctl pin/bring-to-top)"
+        command -v hyprctl >/dev/null 2>&1 || echo "  note: hyprctl not found; Top will be unavailable" ;;
+      *KDE*)
+        echo "textbox Top: KDE KWin keep-above (script over qdbus6)"
+        if ! command -v qdbus6 >/dev/null 2>&1 && ! command -v qdbus >/dev/null 2>&1; then
+          echo "  note: qdbus6 not found; Top will be unavailable"
+        fi ;;
+      *GNOME*)
+        echo "textbox Top: GNOME Wayland (Shell extension required)"
+        _ak_gnome_top ;;
+      *)
+        echo "textbox Top: unavailable on this Wayland compositor (Float still applies)" ;;
+    esac
+  fi
+  unset _ak_wayland _ak_desk
 fi
 
 # PATH symlinks (default on): anime4k TUI + GUI entry point.

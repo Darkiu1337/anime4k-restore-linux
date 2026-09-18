@@ -79,3 +79,13 @@ Fetched at install time (pinned + checksum-verified, never committed):
 | Textractor + bridge | fetched by `translate/fetch-vendor.sh` | same | same | Chenx221 build + kuroahna bridge (or hardened v2 fork asset). Provisioned once under `~/.local/share/anime4k/textractor`, symlinked into each prefix; the bundled bridge-only `SavedExtensions.txt` is force-applied so Textractor never loads its stock translate extensions |
 | Chromium browser (any) | auto-detected [verified: default-browser-first + CDP smoke test] | same | same | Brave/Chromium/Chrome/Edge/Vivaldi/Opera; default browser preferred, isolated debug profile always; installer records the pick in `translate/config.json` |
 | DLX server (opt-in) | fetched by installer | same | same | local DeepL fallback on :1188 |
+
+The textbox **Top** button is enforced per compositor, always **stacking-only**
+(never focus/activate/move/warp — that would make KDE's Focus-follows-mouse
+warp the cursor onto the box): Hyprland via `hyprctl`, KDE via a small KWin
+script over `qdbus6` (from `qt6-tools`/`qttools`, normally already present),
+X11 via Qt's native keep-above hint, and GNOME Wayland via the optional bundled
+Shell extension (`gnome-extensions`, from `gnome-shell`; installed by
+`install.sh`, may need a re-login). Sway and unknown Wayland compositors expose
+no keep-above for normal windows — Float still applies. `anime4k doctor`
+reports which backend is active.

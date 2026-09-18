@@ -34,6 +34,12 @@ def parse_thread(msg):
             "addr": addr.upper(), "name": name or "?"}, text
 
 
+def resolve_thread(thread):
+    """A thread selector may be a string or a zero-arg callable (the textbox
+    re-reads its followed hook live)."""
+    return thread() if callable(thread) else thread
+
+
 def thread_match(meta, thread):
     """thread selector: "" or "*" follows Textractor's selection (untagged
     stock messages always pass); otherwise match name, number, or addr."""
@@ -60,7 +66,9 @@ def listen(url, hook_filter="", raw=False, pipe=False, on_message=None,
     (deduped) instead of printing; used by the overlay's embedded pipeline.
     If on_tagged is given, call on_tagged(meta, ja_text) instead (meta is the
     v2 thread tag dict, or None for untagged stock messages). `thread`
-    selects which thread flows (see thread_match)."""
+    selects which thread flows (see thread_match); it may be a string or a
+    zero-arg callable re-evaluated per message (the textbox switches the
+    followed hook live when the picker saves a new thread)."""
     ws = websocket.create_connection(url, timeout=None)
     print(f"hook [{_ts()}] connected to {url}", flush=True)
     last = ("", "")
@@ -77,7 +85,7 @@ def listen(url, hook_filter="", raw=False, pipe=False, on_message=None,
             continue
         if pipe or on_message or on_tagged:
             meta, text = parse_thread(msg)
-            if not thread_match(meta, thread):
+            if not thread_match(meta, resolve_thread(thread)):
                 continue
             ja = clean_ja(text)
             key = (meta["number"] if meta else "", ja)

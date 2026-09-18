@@ -160,7 +160,7 @@ Both the purge and the close are guarded to the isolated automation profile:
 a browser that wasn't started with that `--user-data-dir` is never touched,
 and the real browser profile is never read or modified.
 
-## Textbox on Hyprland (Float + Click + Top)
+## Textbox window behavior (Float + Click + Top)
 
 * **Click** = click-through. Clicks on the text area fall through to the game
   below; hovering either bar (titlebar or toolbar) restores full input so
@@ -169,7 +169,7 @@ and the real browser profile is never read or modified.
   is deliberately never set — while it is set, Qt silently drops every mask
   update. Both facts verified at the Wayland protocol level.)
 * **Float** is enforced unconditionally (an overlay must never tile). Before
-  the window maps, `translate/placement.py` installs a Hyprland window rule
+  the window maps, `translate/placement.py` installs a Hyprland float rule
   (`hyprctl eval`, title `^vn-translate$`: `float`, `persistent_size`, and the
   saved position) so the first map is already floating at the last geometry —
   no tiled flash. A ~1s poller still re-floats it if something tiles it later,
@@ -180,27 +180,70 @@ and the real browser profile is never read or modified.
   Wayland gives clients no way to set their position, so on Hyprland the
   adapter also captures the compositor's `at`/`size` on close
   (`compositor_geometry` in the textbox settings) and feeds it back through
-  the float rule; on compositors without a rule API (e.g. GNOME) the position
-  stays compositor-chosen — size is still restored.
-* **Top** = pinned to the box's workspace, above everything there. Qt's
-  stay-on-top hint is ignored by Hyprland, so a ~1s poller enforces it: pinned
-  while Top is on *and* you're on the box's workspace, unpinned everywhere
-  else (stays put, normal stacking, freely movable — including Top-off
-  state). Leaving drags it along once (pin mechanics), then it unpins and
-  simply stays where it landed — it is deliberately never moved back, because
-  moving a window makes the compositor flip the active workspace to follow
-  it, which fights you in a loop. Coming back repins it into view. Moving it by hand adopts the new workspace as home
-  (follow-residue can never fake a move: adoption needs a workspace edge
-  while unpinned; re-arm any time with a Top toggle). Every new translated
-  line also raises it (no focus steal). An old session rule once pinned this
-  title everywhere; the poller + map-time unpin neutralize it. Corner
-  rounding follows the compositor (`decoration:rounding`, Style override
-  available).
+  the float rule; on compositors without a rule API (e.g. GNOME/KDE) the
+  position stays compositor-chosen — size is still restored.
+* **Top is compositor-specific but always stacking-only** (see the next
+  section):
+  * **Hyprland** — pinned to the box's workspace, above everything there. Qt's
+    stay-on-top hint is ignored, so a ~1s poller enforces it: pinned while Top
+    is on *and* you're on the box's workspace, unpinned everywhere else (stays
+    put, normal stacking, freely movable — including Top-off state). Leaving
+    drags it along once (pin mechanics), then it unpins and simply stays where
+    it landed — it is deliberately never moved back, because moving a window
+    makes the compositor flip the active workspace to follow it, which fights
+    you in a loop. Coming back repins it into view. Moving it by hand adopts
+    the new workspace as home (follow-residue can never fake a move: adoption
+    needs a workspace edge while unpinned; re-arm any time with a Top toggle).
+    Every new translated line also raises it (no focus steal).
+  * **KDE Plasma (Wayland)** — a small KWin script sets the documented
+    `Window.keepAbove` property. It is loaded/unloaded over the
+    `org.kde.KWin /Scripting` D-Bus interface and lives in
+    `~/.cache/anime4k/kwin-vn-textbox.js`; no user config is touched.
+  * **GNOME (Wayland)** — no client API exists. A bundled GNOME Shell
+    extension (only if installed/enabled by `install.sh`) reads a state file
+    and calls `Meta.Window.make_above()`. Without the extension, Top reports
+    *unsupported* instead of faking it with focus.
+  * **X11** (XFCE, KDE X11, GNOME X11, i3, …) — Qt's `WindowStaysOnTopHint`
+    (`_NET_WM_STATE_ABOVE`) restacks natively; no helper needed.
+  * **Sway / unknown Wayland** — normal xdg windows have no keep-above, so
+    only Float applies; Top is reported unsupported.
+* Corner rounding follows the compositor (`decoration:rounding` on Hyprland;
+  a Style override is available everywhere).
 
-The float rule is installed by the app itself (see above), so the manual rule
-is no longer needed. `placement.py` also ships a `sway` backend and a generic
-no-op fallback, so the same code path works on other compositors (adding
-KWin/GNOME backends is a drop-in). Verified on Hyprland 0.56.2 + Qt 6.11.
+### Compositor control safety (never regress this)
+
+Top/z-order enforcement **must never focus or activate a window, move/resize
+it, or touch the pointer.** It may only change the stacking order. This is not
+cosmetic: under KDE's *Focus follows mouse*, activating a window makes KWin
+warp the cursor onto it, so any "raise it by focusing it" implementation makes
+the mouse jump to the textbox on every poll. The same rule keeps the overlay
+from stealing keyboard focus from the game.
+
+Concretely, these are forbidden (and the self-test asserts they never appear):
+
+* Hyprland: `focuswindow`, `movecursor`, `movewindow`, `resizewindow`,
+  `dispatch focus` — allowed: `pin`, `float`, `bring_to_top` only.
+* KWin script: `workspace.activeWindow = …`, `w.activate()`, `w.geometry = …`,
+  `raiseWindow` — allowed: `w.keepAbove` only.
+* GNOME: `metaWindow.activate()`, `Main.activateWindow()`, `warp_pointer`,
+  `move_frame`/`move_resize_frame` — allowed: `make_above()` only.
+* X11: `activateWindow()`, `wmctrl -a`, `xdotool windowactivate/mousemove`,
+  `QCursor.setPos` — allowed: the keep-above hint / restack only.
+* Textbox: never toggle window flags on a mapped Wayland window (`setFlags()`
+  re-creates it — a focus-steal vector); flags are set once on Wayland.
+
+`translate/placement.py` allow-lists only stacking verbs and drops anything
+else; every command is appended to `~/.cache/anime4k/textbox.log` for
+diagnosis.
+
+### Picking a hook without restarting (live)
+
+The textbox is spawned with `--gameid`, so it watches the game's
+`translate.thread` in the shared store. When the Setup picker saves a thread,
+the running backend re-filters within ~1s (`hook_client` re-evaluates the
+selector per message) — the picked hook starts translating immediately, no
+stop/relaunch. Re-picking via **Setup Text Hooker for translation** mid-session
+switches live too.
 
 ## Textbox style
 
@@ -249,6 +292,14 @@ runner: an absolute path (or a bare name looked up under
 `compatibilitytools.d`); otherwise it falls back to the umu-managed
 UMU-Proton. `requirements.md` lists every dependency per
 distro. `install.sh --check-only` audits the translate deps too.
+
+`install.sh` also detects the session for the textbox **Top** support: X11 is
+native, Hyprland needs `hyprctl`, KDE needs `qdbus6` (both normally present),
+and on GNOME Wayland it offers to deploy+enable the bundled Shell extension
+`vn-textbox-top@anime4k` under
+`~/.local/share/gnome-shell/extensions/` (a re-login may be required on
+Wayland). Sway/unknown Wayland is reported unsupported. `anime4k doctor` prints
+the detected backend.
 
 ## Limits
 

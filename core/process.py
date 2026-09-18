@@ -292,6 +292,10 @@ def spawn_textbox(gid=None):
     try:
         game = store.load_games().get(gid or "")
         tr = (game or {}).get("translate") or {}
+        if gid:
+            # Live-follow this game's stored thread (picker takes effect
+            # without restarting the session).
+            argv += ["--gameid", gid]
         thread = (tr.get("thread") or "").strip()
         if thread:
             argv += ["--thread", thread]
