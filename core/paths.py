@@ -3,6 +3,7 @@ import os
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 SCRIPTS_DIR = os.path.join(REPO_ROOT, "scripts")
 SHADERS_DIR = os.path.join(REPO_ROOT, "shaders")
+PRESETS_JSON = os.path.join(SHADERS_DIR, "presets.json")
 TRANSLATE_DIR = os.path.join(REPO_ROOT, "translate")
 
 CONFIG_DIR = os.path.expanduser("~/.config/anime4k")
@@ -25,6 +26,10 @@ VARIANT_NOTES = {
     "S": "lightest, cheapest",
     "Soft_S": "for aliased art, light",
     "Soft_L": "for aliased art, strong",
+    # Clear presets (3D clarity); the manifest's own `note` is authoritative.
+    "Clear": "3D: sharpen soft/TAA image (neutral color)",
+    "Clear_Vivid": "3D: sharpness + color pop (washed-out art)",
+    "Clear_AA": "3D: anti-aliasing + sharpness",
 }
 
 LOCALES = (

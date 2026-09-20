@@ -8,6 +8,12 @@ the filter processes every presented frame through the vkBasalt Vulkan layer.
 Five Restore variants ship: **S, M, L, Soft_S, Soft_L**
 (S light … L strong; Soft tuned for aliased or downscaled art).
 
+For **3D / rendered VNs**, where the Restore CNN has little to work with,
+three **Clear** presets ship alongside them: **Clear** (sharpness),
+**Clear_Vivid** (sharpness + saturation/contrast for washed-out art) and
+**Clear_AA** (SMAA + sharpness) — built from vkBasalt effects plus one small
+color shader, same launch path and per-game selection as a Restore variant.
+
 ## Origin
 
 This is a toy project 100% vibecoded with Muse Spark 1.3 free, made for

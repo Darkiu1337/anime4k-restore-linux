@@ -84,6 +84,27 @@ so compositing tricks are out; everything here is in-process filtering.
 Soft variants target aliased/downscaled art rather than compression blur.
 Cost scales with input pixels; all figures at 1080p on a GTX 1650-class GPU.
 
+### Clear presets (3D / rendered VNs)
+
+The Restore CNN is trained on 2D line art, so 3D titles see little benefit.
+The **Clear** family targets what actually looks wrong there — soft/TAA-blurred
+output and washed-out color — using vkBasalt's built-in effects plus one small
+custom color shader. They are data in `shaders/presets.json` (an ordered
+`effects` chain + params), rendered per run by the same `ak_vkbasalt_env` path,
+so they compose with translation exactly like Restore variants.
+
+| Preset | Chain (applied left→right) | Fixes |
+|---|---|---|
+| Clear | `cas` | softness / TAA blur, neutral color |
+| Clear_Vivid | `cas` → `ClearColor.fx` | softness + washed-out color (saturation/vibrance/contrast lift) |
+| Clear_AA | `smaa` → `cas` | jaggies/shimmer + softness |
+
+`cas` is nearly free; `ClearColor` is one fullscreen pass; `Clear_AA` pays for
+SMAA (the only real cost risk at 1080p on a GTX 1650-class GPU — if it stutters,
+fall back to `Clear` or add an FXAA-based preset). These are **enhance at native
+resolution**, not upscalers. Add a preset by editing `shaders/presets.json`;
+`anime4k doctor` renders and verifies each chain.
+
 ## Game detection (`anime4k detect <path>`)
 
 Marker-based engine sniffing, shared by the TUI, GUI and the rpgmaker

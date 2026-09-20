@@ -9,7 +9,8 @@
 #   Ren'Py example: native-anime4k.sh "/path/to/Game/Game.sh"
 #
 # Options:
-#   --variant S|M|L|Soft_S|Soft_L  Restore strength (default: L)
+#   --variant NAME                 Restore strength (S|M|L|Soft_S|Soft_L) or a
+#                                  Clear 3D preset (Clear|Clear_Vivid|Clear_AA)
 #   --gl zink|auto       zink = force translation+filter (default);
 #                        auto = launch unfiltered if Zink misbehaves
 #   --gpu nvidia|amd|intel|auto  Vulkan device under Zink (default: auto)
@@ -80,7 +81,7 @@ ak_vkbasalt_env "$VARIANT"
 ak_mangohud_env "$FPS" "$HUD"
 
 if [ "$DRYRUN" = "1" ]; then
-  echo "filter=Anime4K-Restore-$VARIANT gl=$GLMODE gpu=$GPU fps=$FPS hud=$HUD lang=${LANG_SET:-system}"
+  echo "filter=$VARIANT gl=$GLMODE gpu=$GPU fps=$FPS hud=$HUD lang=${LANG_SET:-system}"
   printf '%q' "$EXE"
   if [ "${#ARGS[@]}" -gt 0 ]; then
     printf ' %q' "${ARGS[@]}"

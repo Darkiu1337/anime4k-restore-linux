@@ -786,10 +786,12 @@ fi
 # Deploy shaders (only ours, by exact filename).
 SHADER_DST="$HOME/.local/share/gamescope/reshade/Shaders"
 mkdir -p "$SHADER_DST"
-for f in "$ROOT"/shaders/Anime4K_Restore_*.fx; do
-  cp "$f" "$SHADER_DST/"
+for f in "$ROOT"/shaders/Anime4K_Restore_*.fx "$ROOT"/shaders/ClearColor.fx; do
+  [ -f "$f" ] && cp "$f" "$SHADER_DST/"
 done
-echo "shaders deployed to $SHADER_DST"
+# Clear-preset manifest (the launchers read the deployed copy if present).
+[ -f "$ROOT/shaders/presets.json" ] && cp "$ROOT/shaders/presets.json" "$SHADER_DST/"
+echo "shaders deployed to $SHADER_DST (Restore + Clear presets)"
 
 # Config dir + seed config (never overwrite).
 mkdir -p "$HOME/.config/anime4k"

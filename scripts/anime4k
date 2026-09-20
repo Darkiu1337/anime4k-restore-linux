@@ -92,12 +92,15 @@ cmd_add() {
     path="$_droot"
   fi
   unset _det _eng _r1 _drunner _r2 _dconf _r3 _droot _ddetail
-  variant="$(gum choose --header "Restore variant" \
+  variant="$(gum choose --header "Filter (Restore 2D / Clear 3D)" \
     "L — strongest, highest GPU cost" \
     "M — balanced" \
     "S — lightest, cheapest" \
     "Soft_S — for aliased art, light" \
-    "Soft_L — for aliased art, strong" | cut -d' ' -f1)"
+    "Soft_L — for aliased art, strong" \
+    "Clear — 3D: sharpen soft/TAA image" \
+    "Clear_Vivid — 3D: sharpness + color pop" \
+    "Clear_AA — 3D: anti-aliasing + sharpness" | cut -d' ' -f1)"
   variant="${variant:-L}"
   gpu="$(gpu_list | gum filter --header "Game GPU (filter follows the game)" --placeholder "type to filter...")"
   gpu="${gpu:-auto (discrete GPU preferred)}"
@@ -187,7 +190,7 @@ cmd_edit() {
   field="$(gum choose --header "Edit what?" $fields)"
   [ -n "$field" ] || exit 0
   case "$field" in
-    variant) new="$(gum choose "L" "M" "S" "Soft_S" "Soft_L")" ;;
+    variant) new="$(gum choose "L" "M" "S" "Soft_S" "Soft_L" "Clear" "Clear_Vivid" "Clear_AA")" ;;
     gpu) new="$(gpu_list | gum filter --header "Game GPU")"; ;;
     fps) new="$(gum input --header "FPS cap (number, or off)" --value "$(lib_get fps "$id")")" ;;
     hud) gum confirm "Show fps overlay?" && new="1" || new="0" ;;

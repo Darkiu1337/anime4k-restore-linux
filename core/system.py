@@ -12,8 +12,41 @@ from . import paths
 GPU_CACHE_TTL = 24 * 3600
 
 
+def list_presets():
+    """Clear-preset names from shaders/presets.json, preferred order first.
+    Auto-discovers future entries; never raises."""
+    try:
+        with open(paths.PRESETS_JSON, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return []
+    if not isinstance(data, dict):
+        return []
+    order = ["Clear", "Clear_Vivid", "Clear_AA"]
+    return [n for n in order if n in data] + [n for n in data if n not in order]
+
+
+def preset_note(name):
+    """The manifest `note` for a preset, or ""."""
+    try:
+        with open(paths.PRESETS_JSON, encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return ""
+    entry = data.get(name) if isinstance(data, dict) else None
+    if isinstance(entry, dict):
+        return str(entry.get("note", ""))
+    return ""
+
+
+def variant_note(name):
+    """Dropdown note: manifest note for presets, static note for Restore."""
+    return preset_note(name) or paths.VARIANT_NOTES.get(name, "")
+
+
 def list_variants():
-    """Variant names from the shader dir (auto-discovers future additions)."""
+    """Filter names for the GUI/TUI: Restore shaders (auto-discovered) first,
+    then the Clear presets from the manifest."""
     found = []
     try:
         for fn in sorted(os.listdir(paths.SHADERS_DIR)):
@@ -23,7 +56,8 @@ def list_variants():
     except OSError:
         pass
     order = ["L", "M", "S", "Soft_S", "Soft_L"]
-    return [v for v in order if v in found] + [v for v in found if v not in order]
+    restore = [v for v in order if v in found] + [v for v in found if v not in order]
+    return restore + [p for p in list_presets() if p not in restore]
 
 
 def list_gpus():

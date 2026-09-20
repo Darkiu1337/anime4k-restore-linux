@@ -20,6 +20,19 @@ for v in S M L Soft_S Soft_L; do
     fi
   fi
 done
+for f in ClearColor.fx presets.json; do
+  dst="$SHADER_DST/$f"
+  src="$ROOT/shaders/$f"
+  if [ -f "$dst" ]; then
+    if [ -f "$src" ] && cmp -s "$dst" "$src"; then
+      rm -f "$dst"
+      removed=1
+    else
+      echo "kept $dst (differs from this repo copy; remove by hand if unwanted)"
+      kept=1
+    fi
+  fi
+done
 [ "$removed" = "1" ] && echo "removed deployed shaders."
 [ "$kept" = "1" ] && echo "(some shader files were kept, see above.)"
 for link in "$HOME/.local/bin/anime4k" "$HOME/.local/bin/anime4k-gui" \

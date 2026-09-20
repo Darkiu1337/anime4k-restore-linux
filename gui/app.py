@@ -369,7 +369,7 @@ class GuiBackend(QObject):
 
     @Slot(str, result=str)
     def variantNote(self, v):
-        return paths.VARIANT_NOTES.get(v, "")
+        return system.variant_note(v)
 
     @Slot(result="QVariant")
     def listGpus(self):

@@ -16,7 +16,8 @@
 #
 # Options:
 #   --gamepath DIR       game folder (or omit for picker)
-#   --variant S|M|L|Soft_S|Soft_L  Restore strength (default: L)
+#   --variant NAME                 Restore strength (S|M|L|Soft_S|Soft_L) or a
+#                                  Clear 3D preset (Clear|Clear_Vivid|Clear_AA)
 #   --gpu nvidia|amd|intel|auto  Vulkan device for game+filter (default: auto)
 #   --fps N|off          MangoHud frame cap (default: 60; off disables)
 #   --hud                show MangoHud overlay (fps readout)
@@ -132,7 +133,7 @@ CMD=(rpgmaker-linux)
 CMD+=(--gamepath "$GAMEPATH")
 
 if [ "$DRYRUN" = "1" ]; then
-  echo "filter=Anime4K-Restore-$VARIANT engine=mv-mz gpu=$GPU fps=$FPS hud=$HUD (template patched temporarily)"
+  echo "filter=$VARIANT engine=mv-mz gpu=$GPU fps=$FPS hud=$HUD (template patched temporarily)"
   printf '%q ' "${CMD[@]}"
   echo
   cleanup

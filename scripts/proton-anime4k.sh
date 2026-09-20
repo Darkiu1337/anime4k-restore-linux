@@ -7,7 +7,8 @@
 #   With no exe given, a file picker opens.
 #
 # Options:
-#   --variant S|M|L|Soft_S|Soft_L        Restore strength (default: L)
+#   --variant NAME                       Restore strength (S|M|L|Soft_S|Soft_L)
+#                                        or a Clear 3D preset (Clear|Clear_Vivid|Clear_AA)
 #   --fps N|off          DXVK frame cap (default: 60; off disables)
 #   --prefix DIR         Wine prefix (default: shared project prefix, see --prefix-mode)
 #   --prefix-mode shared|game  shared ~/.local/share/anime4k/prefixes/default
@@ -196,7 +197,7 @@ ak_vkbasalt_env "$VARIANT"
 
 if [ "$DRYRUN" = "1" ]; then
   echo "WINEPREFIX=$PREFIX PROTONPATH=${PROTON:-umu-managed} GAMEID=$GAMEID"
-  echo "filter=Anime4K-Restore-$VARIANT fps=$FPS hud=$HUD lang=${LANG_SET:-system} wow64=$([ "$WOW64" = "1" ] && echo on || echo off) dxvk=${DXVK_FILTER_DEVICE_NAME:-loader-default} cwd=$PWD"
+  echo "filter=$VARIANT fps=$FPS hud=$HUD lang=${LANG_SET:-system} wow64=$([ "$WOW64" = "1" ] && echo on || echo off) dxvk=${DXVK_FILTER_DEVICE_NAME:-loader-default} cwd=$PWD"
   printf 'umu-run %q' "$EXE"
   if [ "${#GAME_ARGS[@]}" -gt 0 ]; then
     printf ' %q' "${GAME_ARGS[@]}"

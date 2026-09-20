@@ -58,6 +58,32 @@ for v in S M L Soft_S Soft_L; do
 done
 [ "$SHADERS_OK" = "1" ] && ok "shaders (5 variants) in $ANIME4K_SHADER_DIR"
 
+# 3b. Clear presets (3D clarity): manifest + custom color shader + a render
+# smoke test of each chain (no game, nothing left behind).
+_PRESETS_OK=1
+_PJSON="$ANIME4K_ROOT/shaders/presets.json"
+[ -f "$_PJSON" ] || _PJSON="$ANIME4K_SHADER_DIR/presets.json"
+if [ -f "$_PJSON" ]; then :; else bad "presets manifest missing (shaders/presets.json)"; _PRESETS_OK=0; fi
+if [ -f "$ANIME4K_SHADER_DIR/ClearColor.fx" ] || [ -f "$ANIME4K_ROOT/shaders/ClearColor.fx" ]; then :; else bad "ClearColor.fx missing (run install.sh)"; _PRESETS_OK=0; fi
+_TMPCONF="$(mktemp 2>/dev/null || echo /tmp/a4k-preset.conf)"
+for _p in Clear Clear_Vivid Clear_AA; do
+  if ! ak_is_preset "$_p"; then
+    bad "preset '$_p' missing from the manifest"
+    _PRESETS_OK=0
+    continue
+  fi
+  if ak_render_preset_conf "$_p" "$_TMPCONF" "$ANIME4K_SHADER_DIR" 2>/dev/null \
+     && grep -q '^effects = ' "$_TMPCONF"; then
+    :
+  else
+    bad "preset '$_p' failed to render"
+    _PRESETS_OK=0
+  fi
+done
+rm -f "$_TMPCONF"
+[ "$_PRESETS_OK" = "1" ] && ok "Clear presets (3D: Clear, Clear_Vivid, Clear_AA)"
+unset _PRESETS_OK _PJSON _TMPCONF _p
+
 # 4. GPUs + what the proton runner will default to.
 if command -v vulkaninfo >/dev/null 2>&1; then
   echo "GPUs (vulkaninfo):"

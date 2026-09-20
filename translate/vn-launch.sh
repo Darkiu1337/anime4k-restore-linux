@@ -269,7 +269,7 @@ if [ "$FILTER" != "off" ]; then
   if command -v ak_vkbasalt_env >/dev/null 2>&1; then
     FILTER="$(ak_variant "$FILTER")"
     ak_vkbasalt_env "$FILTER"
-    echo "filter=Anime4K-Restore-$FILTER conf=$VKBASALT_CONFIG_FILE"
+    echo "filter=$FILTER conf=$VKBASALT_CONFIG_FILE"
   else
     echo "warning: anime4k-lib.sh not found at $AK_LIB; launching unfiltered" >&2
     FILTER="off"

@@ -1,0 +1,31 @@
+{
+  "Clear": {
+    "note": "3D: sharpen soft/TAA image (neutral color)",
+    "effects": ["cas"],
+    "params": {
+      "casSharpness": 0.35
+    }
+  },
+  "Clear_Vivid": {
+    "note": "3D: sharpness + color pop (washed-out art)",
+    "effects": ["cas", "clear_color"],
+    "shaders": {
+      "clear_color": "ClearColor.fx"
+    },
+    "params": {
+      "casSharpness": 0.35
+    }
+  },
+  "Clear_AA": {
+    "note": "3D: anti-aliasing + sharpness",
+    "effects": ["smaa", "cas"],
+    "params": {
+      "casSharpness": 0.35,
+      "smaaEdgeDetection": "luma",
+      "smaaThreshold": 0.05,
+      "smaaMaxSearchSteps": 32,
+      "smaaMaxSearchStepsDiag": 16,
+      "smaaCornerRounding": 25
+    }
+  }
+}

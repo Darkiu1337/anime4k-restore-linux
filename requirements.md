@@ -18,6 +18,11 @@ from upstream docs — confirmations welcome.
 | icoextract | `icoextract` [verified] | `python3-icoextract` | `pip install icoextract` | game-icon extraction for the GUI |
 | git | `git` [verified] | `git` | `git` | cloning this repo |
 
+Filter selection needs nothing extra: the Restore variants are `.fx` files
+shipped here, and the 3D **Clear** presets use vkBasalt built-ins (`cas`,
+`smaa`) plus the shipped `shaders/ClearColor.fx`. `install.sh` deploys both to
+the shader dir; `anime4k doctor` verifies each preset renders.
+
 ## Per-runner optionals
 
 | Runner | Need | Notes |
