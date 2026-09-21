@@ -162,22 +162,32 @@ Dialog {
         }
     }
 
-    footer: RowLayout {
-        spacing: 8
-        Btn { text: "Cancel"; onClicked: root.close() }
-        Item { Layout.fillWidth: true }
-        Btn {
-            text: "Back"
-            enabled: pages.currentIndex > 0
-            onClicked: pages.currentIndex--
-        }
-        Btn {
-            text: pages.currentIndex === pages.count - 1 ? "Finish" : "Next"
-            onClicked: {
-                if (pages.currentIndex === pages.count - 1)
-                    finish()
-                else
-                    pages.currentIndex++
+    // A Dialog's `padding` does not reach the footer, so wrap the button row
+    // in a padded Control to keep the buttons off the wizard's edges.
+    footer: Control {
+        leftPadding: 16
+        rightPadding: 16
+        topPadding: 8
+        bottomPadding: 16
+        implicitWidth: contentItem.implicitWidth + leftPadding + rightPadding
+        implicitHeight: contentItem.implicitHeight + topPadding + bottomPadding
+        contentItem: RowLayout {
+            spacing: 8
+            Btn { text: "Cancel"; onClicked: root.close() }
+            Item { Layout.fillWidth: true }
+            Btn {
+                text: "Back"
+                enabled: pages.currentIndex > 0
+                onClicked: pages.currentIndex--
+            }
+            Btn {
+                text: pages.currentIndex === pages.count - 1 ? "Finish" : "Next"
+                onClicked: {
+                    if (pages.currentIndex === pages.count - 1)
+                        finish()
+                    else
+                        pages.currentIndex++
+                }
             }
         }
     }
