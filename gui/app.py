@@ -27,6 +27,22 @@ from PySide6.QtQuickControls2 import QQuickStyle
 STYLE = "org.kde.desktop"
 
 
+def _is_benign_log_line(line):
+    """Stderr chatter that is expected and not a real problem: the NW.js
+    wrapper's X11 note and stock Chromium warnings. Hidden from the run log so
+    actual errors stand out (see docs/limits.md)."""
+    low = line.lower()
+    if "wayland not detected, starting in x11" in low:
+        return True
+    if "account_consistency_mode_manager" in low:
+        return True
+    if "chrome/browser/push_messaging" in low:
+        return True
+    if "wayland_object.cc" in low and "binding to" in low:
+        return True
+    return False
+
+
 def apply_style():
     """Native KDE Quick Controls (follows kdeglobals); Fusion fallback."""
     try:
@@ -237,6 +253,7 @@ class GuiBackend(QObject):
         self.proc = None
         self.textbox_proc = None
         self._picker = None
+        self._log_carry = ""  # incomplete trailing log line between reads
         self._running_gid = None
         self._running_translate = False
         self._pending = None
@@ -466,9 +483,10 @@ class GuiBackend(QObject):
         cfg["gui.last_dir"] = path if os.path.isdir(path) else os.path.dirname(path)
         store.save_config(cfg)
 
-    def _picker_argv(self, target):
+    def _picker_argv(self, target, runner="proton"):
         """Native picker argv: KDE's kdialog first, zenity fallback, None when
-        neither exists (the QML dialogs are then used)."""
+        neither exists (the QML dialogs are then used). Proton games default
+        to a .exe filter; native Linux executables show all files."""
         start = self.lastDir()
         if target == "dir":
             title = "Select RPGMaker game folder"
@@ -478,25 +496,30 @@ class GuiBackend(QObject):
             if shutil.which("zenity"):
                 return ["zenity", "--file-selection", "--directory",
                         "--title", title, "--filename", start + os.sep]
-        else:
-            title = "Select Windows game executable"
-            if shutil.which("kdialog"):
-                return ["kdialog", "--getopenfilename", start,
-                        "Windows executables (*.exe *.EXE)\nAll files (*)",
-                        "--title", title]
-            if shutil.which("zenity"):
-                return ["zenity", "--file-selection", "--title", title,
-                        "--file-filter", "Windows executables | *.exe *.EXE",
-                        "--file-filter", "All files | *",
-                        "--filename", start + os.sep]
+        exe_filter = runner != "native"
+        title = ("Select Windows game executable" if exe_filter
+                 else "Select game executable")
+        if shutil.which("kdialog"):
+            argv = ["kdialog", "--getopenfilename", start]
+            if exe_filter:
+                argv.append("Windows executables (*.exe *.EXE)\nAll files (*)")
+            argv += ["--title", title]
+            return argv
+        if shutil.which("zenity"):
+            argv = ["zenity", "--file-selection", "--title", title]
+            if exe_filter:
+                argv += ["--file-filter", "Windows executables | *.exe *.EXE"]
+            argv += ["--file-filter", "All files | *",
+                     "--filename", start + os.sep]
+            return argv
         return None
 
-    @Slot(str, result=bool)
-    def pickPath(self, target):
+    @Slot(str, str, result=bool)
+    def pickPath(self, target, runner="proton"):
         """Open the desktop's native file/folder picker (KDE kdialog, zenity
         fallback). Returns False when neither is installed, so QML can fall
         back to its own dialog."""
-        argv = self._picker_argv(target)
+        argv = self._picker_argv(target, runner)
         if not argv:
             return False
         proc = QProcess(self)
@@ -548,6 +571,7 @@ class GuiBackend(QObject):
         stamp = datetime.datetime.now().strftime("%H:%M:%S")
         mode = "unfiltered A/B" if unfiltered else f"filtered ({game.get('variant', '')})"
         self.logCleared.emit()
+        self._log_carry = ""
         self.logAppended.emit(f"[{stamp}] {game.get('name', gid)} — {mode}")
         self.logAppended.emit(f"$ {' '.join(argv)}\n")
         self.proc = QProcess(self)
@@ -617,6 +641,7 @@ class GuiBackend(QObject):
         env = QProcessEnvironment.systemEnvironment()
         stamp = datetime.datetime.now().strftime("%H:%M:%S")
         self.logCleared.emit()
+        self._log_carry = ""
         mode = "setup (pick the text hook)" if setup else "filtered + translation"
         self.logAppended.emit(f"[{stamp}] {game.get('name', gid)} — {mode}")
         self.logAppended.emit(f"$ {' '.join(argv)}\n")
@@ -748,11 +773,29 @@ class GuiBackend(QObject):
             self.logAppended.emit("translator browser stopped.")
 
     def _read_log(self):
-        if self.proc is not None:
-            self.logAppended.emit(str(self.proc.readAllStandardOutput(), "utf-8", "replace").rstrip())
+        if self.proc is None:
+            return
+        chunk = str(self.proc.readAllStandardOutput(), "utf-8", "replace")
+        if not chunk:
+            return
+        # Buffer the trailing partial line so a warning split across reads is
+        # still filtered; only complete lines are emitted.
+        data = self._log_carry + chunk
+        lines = data.split("\n")
+        self._log_carry = lines.pop()
+        kept = [ln for ln in lines if not _is_benign_log_line(ln)]
+        if kept:
+            self.logAppended.emit("\n".join(kept) + "\n")
+
+    def _flush_log_carry(self):
+        if self._log_carry:
+            if not _is_benign_log_line(self._log_carry):
+                self.logAppended.emit(self._log_carry)
+            self._log_carry = ""
 
     def _finished(self, code, status):
         import subprocess
+        self._flush_log_carry()
         self.logAppended.emit(f"\n[exited with code {code}]")
         self._set_status("Idle.")
         self._set_running(False)

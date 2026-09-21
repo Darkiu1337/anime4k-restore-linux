@@ -253,12 +253,19 @@ Dialog {
                                     // Native desktop picker (KDE kdialog / zenity);
                                     // QML dialogs only as a last resort.
                                     var target = root.runner === "rpgmaker" ? "dir" : "file"
-                                    if (backend.pickPath(target))
+                                    if (backend.pickPath(target, root.runner))
                                         return
                                     if (target === "dir") {
                                         dirPicker.currentFolder = backend.pathToFileUrl(backend.lastDir())
                                         dirPicker.open()
                                     } else {
+                                        var linux = root.runner === "native"
+                                        exePicker.title = linux ? "Select game executable"
+                                                                : "Select Windows game executable"
+                                        exePicker.nameFilters = linux
+                                            ? ["All files (*)"]
+                                            : ["Windows executables (*.exe *.EXE)", "All files (*)"]
+                                        exePicker.selectedNameFilter = exePicker.nameFilters[0]
                                         exePicker.currentFolder = backend.pathToFileUrl(backend.lastDir())
                                         exePicker.open()
                                     }

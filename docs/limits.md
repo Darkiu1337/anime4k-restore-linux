@@ -161,6 +161,10 @@ to never export `HOST_LC_ALL` (escape hatch if a title still dies with it).
   installed; the TUI uses `zenity`. The last-used folder is remembered. Paths
   can always be pasted into the wizard instead.
 * **Logs** belong to the selected game: switching games clears the log view.
+  Expected NW.js/Chromium chatter is hidden (the wrapper's "wayland not
+  detected" note, signin/push-messaging and Ozone "Binding to … version"
+  warnings) so real errors stand out; the full stream still reaches the
+  terminal when a launcher is run by hand.
 * **Mouse in fullscreen**: fixed-resolution titles may mis-map clicks under
   compositor fullscreen (they keep stale input geometry when scaled).
   Prefer the game's own fullscreen option; a Wine virtual desktop at
