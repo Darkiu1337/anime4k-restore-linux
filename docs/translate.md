@@ -40,8 +40,8 @@ Auto-attach comes from `SavedHooks.txt`/`SavedGames.txt`, seeded by the
 launcher from the game entry (recorded hook auto-inserts; user-saved lines
 always win). The v2 bridge streams **every** thread tagged with its
 identity (`~#<num>[*]~<addr>~<name>~<text>`, `*` = Textractor's own
-selection) on `:6677`; native code filters by thread, translates (Brave CDP
-DeepL primary, local DLX fallback) and displays.
+selection) on `:6677`; native code filters by thread, translates via Brave CDP
+DeepL and displays.
 
 Filter + translation compose: `vn-launch.sh --filter <variant>` applies the
 same vkBasalt mechanism as `proton-anime4k.sh`. A/B unfiltered launches stay
@@ -285,8 +285,7 @@ forces the bridge-only extension set every session.
 Settings come from `translate/config.json` and the games registry from
 `translate/translate.json` — both seeded from their `.sample` files on
 first install (never overwritten); the Python entry points also start on a
-bare clone by falling back to the samples/builtins. DLX server is opt-in
-(offline fallback on `:1188`). `vn-launch.sh` resolves the shared
+bare clone by falling back to the samples/builtins. `vn-launch.sh` resolves the shared
 `~/.config/anime4k/config.json` `proton` value the same way as the filter
 runner: an absolute path (or a bare name looked up under
 `compatibilitytools.d`); otherwise it falls back to the umu-managed
@@ -310,10 +309,8 @@ the detected backend.
   cancel). Thread picking by name needs the v2 bridge — stock installs follow
   Textractor's selection instead.
 * Sentence-MT quirks: speaker names romanize inconsistently across lines.
-* DLX (`deepl_dlx.py`, `:1188`) is an **opt-in, experimental** offline
-  fallback. It is off by default (`"dlx_enabled": false`); when off, a DeepL
-  browser failure reports a short "DeepL unavailable" line instead of
-  attempting the local server.
+* DeepL runs only through the isolated browser (CDP); a browser failure
+  reports a short "DeepL unavailable — retrying" line.
 * **Clean up after tests.** A session that isn't stopped cleanly leaves
   orphaned Wine/Proton services under `systemd --user` (`services.exe`,
   `winedevice.exe`, `svchost.exe`, `plugplay.exe`, `explorer.exe /desktop`,

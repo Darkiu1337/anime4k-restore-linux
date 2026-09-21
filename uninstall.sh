@@ -43,6 +43,11 @@ for link in "$HOME/.local/bin/anime4k" "$HOME/.local/bin/anime4k-gui" \
     echo "removed symlink $link"
   fi
 done
+# Stale DLX binary from older installs (DLX support was removed).
+if [ -e "$HOME/.local/bin/dlx" ]; then
+  rm -f "$HOME/.local/bin/dlx"
+  echo "removed stale ~/.local/bin/dlx"
+fi
 for desk in anime4k.desktop anime4k-gui.desktop; do
   if [ -f "$HOME/.local/share/applications/$desk" ]; then
     rm -f "$HOME/.local/share/applications/$desk"

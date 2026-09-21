@@ -33,9 +33,6 @@ DEFAULTS = {
     "deepl_url": "https://www.deepl.com/en/translator",
     "srclang": "ja",
     "tgtlang": "en",
-    "dlx_url": "http://localhost:1188/translate",
-    # Opt-in, experimental: needs a local DLX server on :1188.
-    "dlx_enabled": False,
     "cdp_timeout": 30,
     "browser_hidden": True,
 }

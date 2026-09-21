@@ -7,8 +7,6 @@
   "deepl_url": "https://www.deepl.com/en/translator",
   "srclang": "ja",
   "tgtlang": "en",
-  "dlx_url": "http://localhost:1188/translate",
-  "dlx_enabled": false,
   "cdp_timeout": 30,
   "browser_hidden": true
 }

@@ -100,8 +100,9 @@ that is the whole effect. Nothing is upscaled; resolution never changes.
 
 ```sh
 git clone https://github.com/Darkiu1337/anime4k-restore-linux.git && cd anime4k-restore-linux
-./install.sh            # deps (batched; Arch/Debian/Ubuntu/Fedora), shaders, Proton-CachyOS, symlinks
-./install.sh --check-only   # audit only
+./install.sh            # one flow: deps, vkBasalt, Proton, RPGMaker, shaders, translation, symlinks
+./install.sh --check-only   # audit only (no changes)
+./install.sh --dry-run      # show what would be installed
 anime4k                 # TUI  |  anime4k-gui  # Qt GUI
 ```
 

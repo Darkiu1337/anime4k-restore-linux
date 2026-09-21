@@ -26,8 +26,8 @@ done
 HERE="$(cd "$(dirname "$_SRC")" && pwd)"
 unset _SRC _DIR
 REG="$HERE/translate.json"
-# Bridge build to provision on self-heal (fixed = tagged/v2; install-textractor
-# falls back to stock when the asset is absent).
+# Bridge build to provision on self-heal (fixed = tagged/v2; install.sh's
+# internal provisioner falls back to stock when the asset is absent).
 BRIDGE="${TRANSLATE_BRIDGE:-fixed}"
 # Shared core (config, variants, vkBasalt, WoW64). Sourced early so --no-wow64
 # applies even with --filter off; docs/limits.md.
@@ -126,7 +126,7 @@ if [ "$DRYRUN" != "1" ] && [ "$CMD" = "launch" ]; then
     echo "error: anime4k-lib.sh not found at $AK_LIB" >&2; exit 1
   fi
   TRX="$(ak_textractor_ensure "$PREFIX" "$BRIDGE")" \
-    || { echo "error: Textractor provisioning failed (run: translate/fetch-vendor.sh, then re-run install.sh)" >&2; exit 1; }
+    || { echo "error: Textractor provisioning failed (re-run ./install.sh)" >&2; exit 1; }
   [ -n "$TRX" ] && [ -f "$TRX" ] \
     || { echo "error: Textractor missing after provisioning: ${TRX:-<none>}" >&2; exit 1; }
 fi

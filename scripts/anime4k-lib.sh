@@ -408,9 +408,11 @@ ak_textractor_ensure() { # <prefix> [bridge]
   [ -n "$prefix" ] || return 1
   local exe="$prefix/drive_c/Textractor/x86/Textractor.exe"
   if [ ! -f "$exe" ]; then
-    local inst="$ANIME4K_ROOT/translate/install-textractor.sh"
+    # Single installer, internal mode: fetches the pinned vendor bundle when
+    # missing, provisions the canonical dir and links it into this prefix.
+    local inst="$ANIME4K_ROOT/install.sh"
     [ -f "$inst" ] || return 1
-    bash "$inst" --prefix "$prefix" --bridge "$bridge" >&2 || return 1
+    bash "$inst" --provision-textractor --prefix "$prefix" --bridge "$bridge" >&2 || return 1
   fi
   ak_textractor_bridge_only "$prefix/drive_c/Textractor/x86"
   printf '%s' "$exe"

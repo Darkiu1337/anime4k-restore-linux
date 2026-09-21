@@ -203,10 +203,10 @@ if [ -f "$_TX86/Textractor.exe" ]; then
     if [ "$(tr -d '[:space:]' < "$_SE")" = "textractor_websocket_x86>" ]; then
       ok "Textractor extensions: bridge-only"
     else
-      bad "Textractor SavedExtensions.txt is not bridge-only — run: translate/install-textractor.sh (docs/translate.md)"
+      bad "Textractor SavedExtensions.txt is not bridge-only — re-run ./install.sh (docs/translate.md)"
     fi
   else
-    bad "Textractor SavedExtensions.txt missing — run: translate/install-textractor.sh"
+    bad "Textractor SavedExtensions.txt missing — re-run ./install.sh"
   fi
   _BX="$_TX86/textractor_websocket_x86.xdll"
   if [ -f "$_TDIR/vendor/textractor_websocket_x86.fixed.dll" ] \
