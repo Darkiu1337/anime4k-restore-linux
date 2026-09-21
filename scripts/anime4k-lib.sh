@@ -625,13 +625,28 @@ ak_detect_engine() {
   fi
   base="$(basename "$dir")"
 
-  # RPGMaker MV/MZ (game root or www/ depth, normalized upward).
-  if [ -f "$dir/www/index.html" ] && [ -f "$dir/www/js/rpg_core.js" ]; then
-    printf 'rpgmaker-mv|rpgmaker|high|%s|RPGMaker MV/MZ markers' "$dir"
+  # RPGMaker MV/MZ (Chromium/NW.js). Marker is js/rpg_core.js (MV) or
+  # js/rmmz_core.js (MZ). Two shapes:
+  #   * <root>/www/index.html ...   -> game root as given
+  #   * <dir>/index.html + js/...   -> if <dir> is named "www" the user picked
+  #     the web subfolder and the game root is its parent; otherwise <dir> IS
+  #     the game root (MZ/MV desktop exports keep index.html + js/ at root).
+  if [ -f "$dir/www/index.html" ] \
+     && { [ -f "$dir/www/js/rpg_core.js" ] || [ -f "$dir/www/js/rmmz_core.js" ]; }; then
+    local _core="MV"
+    [ -f "$dir/www/js/rmmz_core.js" ] && _core="MZ"
+    printf 'rpgmaker-mv|rpgmaker|high|%s|RPGMaker %s markers' "$dir" "$_core"
     return 0
   fi
-  if [ -f "$dir/index.html" ] && [ -f "$dir/js/rpg_core.js" ]; then
-    printf 'rpgmaker-mv|rpgmaker|high|%s|RPGMaker MV/MZ markers (www/ depth)' "$(dirname "$dir")"
+  if [ -f "$dir/index.html" ] \
+     && { [ -f "$dir/js/rpg_core.js" ] || [ -f "$dir/js/rmmz_core.js" ]; }; then
+    local _core="MV"
+    [ -f "$dir/js/rmmz_core.js" ] && _core="MZ"
+    if [ "$base" = "www" ]; then
+      printf 'rpgmaker-mv|rpgmaker|high|%s|RPGMaker %s markers (www/ depth)' "$(dirname "$dir")" "$_core"
+    else
+      printf 'rpgmaker-mv|rpgmaker|high|%s|RPGMaker %s desktop export' "$dir" "$_core"
+    fi
     return 0
   fi
 

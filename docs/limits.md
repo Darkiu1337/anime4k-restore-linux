@@ -113,7 +113,7 @@ anything else asks with the suggestion pre-selected.
 
 | Markers | Engine | Runner |
 |---|---|---|
-| `www/index.html` + `www/js/rpg_core.js` (root or `www/` depth) | rpgmaker-mv | rpgmaker |
+| `index.html` (root or `www/`) + `js/rpg_core.js` or `js/rmmz_core.js` | rpgmaker-mv (MV/MZ) | rpgmaker |
 | `Data/*.rxdata` / `*.rvdata*` + `Game.ini` | rpgmaker-xp | proton |
 | `renpy/` + `game/` + Linux launcher (`.sh`/ELF) | renpy-native | native |
 | `renpy/` + `game/` + `.exe`, no `.sh` | renpy-windows | proton |
