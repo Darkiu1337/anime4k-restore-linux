@@ -55,7 +55,8 @@ def list_variants():
                 found.append(m.group(1))
     except OSError:
         pass
-    order = ["L", "M", "S", "Soft_S", "Soft_L"]
+    order = ["L", "M", "S", "Soft_S", "Soft_M", "Soft_L",
+             "VL", "UL", "Soft_VL", "Soft_UL"]
     restore = [v for v in order if v in found] + [v for v in found if v not in order]
     return restore + [p for p in list_presets() if p not in restore]
 

@@ -328,18 +328,19 @@ open(conf, "w").write("\n".join(lines) + "\n")
 EOF
 }
 
-# Validate a filter name: a Restore variant (S, M, L, Soft_S, Soft_L) or a
-# Clear preset from shaders/presets.json. Unknown names die here (once).
+# Validate a filter name: a Restore variant (S, M, L, Soft_S, Soft_M, Soft_L,
+# VL, UL, Soft_VL, Soft_UL) or a Clear preset from shaders/presets.json.
+# Unknown names die here (once).
 ak_variant() {
   local v="${1:-L}"
   case "$v" in
-    S|M|L|Soft_S|Soft_L) printf '%s' "$v"; return 0 ;;
+    S|M|L|Soft_S|Soft_M|Soft_L|VL|UL|Soft_VL|Soft_UL) printf '%s' "$v"; return 0 ;;
   esac
   if ak_is_preset "$v"; then
     printf '%s' "$v"
     return 0
   fi
-  ak_die "unknown variant '$v' (Restore: S, M, L, Soft_S, Soft_L; Clear presets: see shaders/presets.json)"
+  ak_die "unknown variant '$v' (Restore: S, M, L, Soft_S, Soft_M, Soft_L, VL, UL, Soft_VL, Soft_UL; Clear presets: see shaders/presets.json)"
 }
 
 # Set up vkBasalt layer env for the given variant or preset.

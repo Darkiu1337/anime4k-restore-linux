@@ -9,7 +9,7 @@ Strategy per pass:
   (MRT support varies across runtimes; splitting is portable).
 - MulAdd() provided as a macro (identical semantics to HLSL mul()+add).
 
-Usage: gen_restore_fx.py --variant S|M|L|Soft_S|Soft_L
+Usage: gen_restore_fx.py --variant S|M|L|Soft_S|Soft_M|Soft_L|VL|UL|Soft_VL|Soft_UL
            [--magpie-dir DIR] [--out PATH]
 
   --magpie-dir defaults to ../magpie-upstream/Magpie (a Magpie checkout is
@@ -23,14 +23,30 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _ap = argparse.ArgumentParser(description="Port Magpie Anime4K Restore HLSL to ReShade FX.")
-_ap.add_argument("--variant", required=True, choices=["S", "M", "L", "Soft_S", "Soft_L"])
+_ap.add_argument("--variant", required=True,
+                 choices=["S", "M", "L", "Soft_S", "Soft_M", "Soft_L",
+                          "VL", "UL", "Soft_VL", "Soft_UL"])
 _ap.add_argument("--magpie-dir", default=os.path.join(_HERE, "..", "magpie-upstream", "Magpie"))
 _ap.add_argument("--out", default=None)
 _args = _ap.parse_args()
 
 VARIANT = _args.variant
-HLSL_PATH = os.path.join(_args.magpie_dir, "src", "Effects", "Anime4K",
-                         f"Anime4K_Restore_{VARIANT}.hlsl")
+
+
+def _hlsl_path(base, variant):
+    """Find the source HLSL. Magpie checkouts differ: upstream has
+    src/Effects/Anime4K, some trees ship effects/Anime4K, and --magpie-dir may
+    point straight at the Anime4K folder."""
+    name = f"Anime4K_Restore_{variant}.hlsl"
+    for cand in (os.path.join(base, "src", "Effects", "Anime4K", name),
+                 os.path.join(base, "effects", "Anime4K", name),
+                 os.path.join(base, name)):
+        if os.path.isfile(cand):
+            return cand
+    return os.path.join(base, "src", "Effects", "Anime4K", name)
+
+
+HLSL_PATH = _hlsl_path(_args.magpie_dir, VARIANT)
 OUT_PATH = _args.out or os.path.join(_HERE, f"Anime4K_Restore_{VARIANT}.fx")
 
 src = open(HLSL_PATH).read()
@@ -40,7 +56,7 @@ src = open(HLSL_PATH).read()
 def tex_to_sampler(t):
     return {"INPUT": "SampInput", "tex1": "SampT1", "tex2": "SampT2",
             "tex3": "SampT3", "tex4": "SampT4", "tex5": "SampT5",
-            "tex6": "SampT6"}[t]
+            "tex6": "SampT6", "tex7": "SampT7", "tex8": "SampT8"}[t]
 
 def rename_types(line):
     line = line.replace("MF4x4", "float4x4").replace("MF3x4", "float3x4").replace("MF4x3", "float4x3")
@@ -67,7 +83,9 @@ def expand_muladd(line):
     ReShade FX has no rectangular matrices; expand to dots.
     HLSL constructor fills row-major, mul(x, M)[j] = dot(x, column j),
     so output j = dot(x, (args[j], args[j+C], ...)). Identical to mul()."""
-    m = re.match(r"^(\s*\w+\s*=\s*)MulAdd\((.*)$", line)
+    # Accept an optional type prefix so declarations used as initializers
+    # (e.g. "MF3 target4 = MulAdd(...)", renamed to float3 first) convert too.
+    m = re.match(r"^(\s*(?:float[34]\s+)?\w+\s*=\s*)MulAdd\((.*)$", line)
     if not m:
         return line
     prefix, rest = m.group(1), m.group(2)
@@ -283,8 +301,7 @@ def sample_pass(psname, hlslname, outvar, keep_targets=None, out_src=None):
         s = rename_types(s)
         s = brace_init(s)
         s = convert_sample(s)
-        if re.match(r"\w+\s*=\s*MulAdd\(", s):
-            s = expand_muladd(s)
+        s = expand_muladd(s)  # no-op when the line is not a MulAdd
         out.append("\t" + s)
     out.append("}")
     return "\n".join(out)
@@ -348,6 +365,71 @@ SPECS = {
         ("sample", "HLPass7", "Anime4K_PS7", None, None, None),
     ]},
 }
+
+# Soft_M has identical pass wiring to M (only the trained weights differ), so
+# it reuses M's spec shape.
+SPECS["Soft_M"] = {"ntex": 6, "passes": SPECS["M"]["passes"]}
+
+# UL: 8 HLSL passes, 8 logical textures, multi-output passes split 1:1.
+# Pass1 is gather (3 targets), Pass2-7 are sample passes (3 targets, the last
+# three also a 4th), Pass8 is the final residual. Derived from the HLSL
+# texN[gxy]/[destPos] write lines.
+UL_PASSES = [
+    ("gather", "HLPass1", "Anime4K_PS1a", "INPUT", 3, "float3", ["target1"], "Anime4K_T1"),
+    ("gather", "HLPass1", "Anime4K_PS1b", "INPUT", 3, "float3", ["target2"], "Anime4K_T2"),
+    ("gather", "HLPass1", "Anime4K_PS1c", "INPUT", 3, "float3", ["target3"], "Anime4K_T3"),
+    ("sample", "HLPass2", "Anime4K_PS2a", "Anime4K_T4", ("target1",), "tex4"),
+    ("sample", "HLPass2", "Anime4K_PS2b", "Anime4K_T5", ("target2",), "tex5"),
+    ("sample", "HLPass2", "Anime4K_PS2c", "Anime4K_T6", ("target3",), "tex6"),
+    ("sample", "HLPass3", "Anime4K_PS3a", "Anime4K_T1", ("target1",), "tex1"),
+    ("sample", "HLPass3", "Anime4K_PS3b", "Anime4K_T2", ("target2",), "tex2"),
+    ("sample", "HLPass3", "Anime4K_PS3c", "Anime4K_T3", ("target3",), "tex3"),
+    ("sample", "HLPass4", "Anime4K_PS4a", "Anime4K_T4", ("target1",), "tex4"),
+    ("sample", "HLPass4", "Anime4K_PS4b", "Anime4K_T5", ("target2",), "tex5"),
+    ("sample", "HLPass4", "Anime4K_PS4c", "Anime4K_T6", ("target3",), "tex6"),
+    ("sample", "HLPass5", "Anime4K_PS5a", "Anime4K_T1", ("target1",), "tex1"),
+    ("sample", "HLPass5", "Anime4K_PS5b", "Anime4K_T2", ("target2",), "tex2"),
+    ("sample", "HLPass5", "Anime4K_PS5c", "Anime4K_T3", ("target3",), "tex3"),
+    ("sample", "HLPass5", "Anime4K_PS5d", "Anime4K_T7", ("target4",), "tex7"),
+    ("sample", "HLPass6", "Anime4K_PS6a", "Anime4K_T4", ("target1",), "tex4"),
+    ("sample", "HLPass6", "Anime4K_PS6b", "Anime4K_T5", ("target2",), "tex5"),
+    ("sample", "HLPass6", "Anime4K_PS6c", "Anime4K_T6", ("target3",), "tex6"),
+    ("sample", "HLPass6", "Anime4K_PS6d", "Anime4K_T8", ("target4",), "tex8"),
+    ("sample", "HLPass7", "Anime4K_PS7a", "Anime4K_T1", ("target1",), "tex1"),
+    ("sample", "HLPass7", "Anime4K_PS7b", "Anime4K_T2", ("target2",), "tex2"),
+    ("sample", "HLPass7", "Anime4K_PS7c", "Anime4K_T3", ("target3",), "tex3"),
+    ("sample", "HLPass7", "Anime4K_PS7d", "Anime4K_T7", ("target4",), "tex7"),
+    ("sample", "HLPass8", "Anime4K_PS8", None, None, None),
+]
+SPECS["UL"] = {"ntex": 8, "passes": UL_PASSES}
+SPECS["Soft_UL"] = {"ntex": 8, "passes": UL_PASSES}
+
+# VL: 8 HLSL passes, 6 logical textures (Pass1 gather 2 targets; the sample
+# passes carry 3 targets each; Pass8 is the final residual).
+VL_PASSES = [
+    ("gather", "HLPass1", "Anime4K_PS1a", "INPUT", 3, "float3", ["target1"], "Anime4K_T1"),
+    ("gather", "HLPass1", "Anime4K_PS1b", "INPUT", 3, "float3", ["target2"], "Anime4K_T2"),
+    ("sample", "HLPass2", "Anime4K_PS2a", "Anime4K_T3", ("target1",), "tex3"),
+    ("sample", "HLPass2", "Anime4K_PS2b", "Anime4K_T4", ("target2",), "tex4"),
+    ("sample", "HLPass3", "Anime4K_PS3a", "Anime4K_T1", ("target1",), "tex1"),
+    ("sample", "HLPass3", "Anime4K_PS3b", "Anime4K_T2", ("target2",), "tex2"),
+    ("sample", "HLPass3", "Anime4K_PS3c", "Anime4K_T5", ("target3",), "tex5"),
+    ("sample", "HLPass4", "Anime4K_PS4a", "Anime4K_T3", ("target1",), "tex3"),
+    ("sample", "HLPass4", "Anime4K_PS4b", "Anime4K_T4", ("target2",), "tex4"),
+    ("sample", "HLPass4", "Anime4K_PS4c", "Anime4K_T6", ("target3",), "tex6"),
+    ("sample", "HLPass5", "Anime4K_PS5a", "Anime4K_T1", ("target1",), "tex1"),
+    ("sample", "HLPass5", "Anime4K_PS5b", "Anime4K_T2", ("target2",), "tex2"),
+    ("sample", "HLPass5", "Anime4K_PS5c", "Anime4K_T5", ("target3",), "tex5"),
+    ("sample", "HLPass6", "Anime4K_PS6a", "Anime4K_T3", ("target1",), "tex3"),
+    ("sample", "HLPass6", "Anime4K_PS6b", "Anime4K_T4", ("target2",), "tex4"),
+    ("sample", "HLPass6", "Anime4K_PS6c", "Anime4K_T6", ("target3",), "tex6"),
+    ("sample", "HLPass7", "Anime4K_PS7a", "Anime4K_T1", ("target1",), "tex1"),
+    ("sample", "HLPass7", "Anime4K_PS7b", "Anime4K_T2", ("target2",), "tex2"),
+    ("sample", "HLPass7", "Anime4K_PS7c", "Anime4K_T5", ("target3",), "tex5"),
+    ("sample", "HLPass8", "Anime4K_PS8", None, None, None),
+]
+SPECS["VL"] = {"ntex": 6, "passes": VL_PASSES}
+SPECS["Soft_VL"] = {"ntex": 6, "passes": VL_PASSES}
 
 if VARIANT not in SPECS:
     raise SystemExit(f"unknown variant {VARIANT} (have: {', '.join(SPECS)})")

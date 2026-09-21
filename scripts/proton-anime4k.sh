@@ -7,7 +7,7 @@
 #   With no exe given, a file picker opens.
 #
 # Options:
-#   --variant NAME                       Restore strength (S|M|L|Soft_S|Soft_L)
+#   --variant NAME                       Restore strength (S|M|L|Soft_S|Soft_M|Soft_L|VL|UL|Soft_VL|Soft_UL)
 #                                        or a Clear 3D preset (Clear|Clear_Vivid|Clear_AA)
 #   --fps N|off          DXVK frame cap (default: 60; off disables)
 #   --prefix DIR         Wine prefix (default: shared project prefix, see --prefix-mode)

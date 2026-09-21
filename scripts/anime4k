@@ -97,7 +97,12 @@ cmd_add() {
     "M — balanced" \
     "S — lightest, cheapest" \
     "Soft_S — for aliased art, light" \
+    "Soft_M — for aliased art, balanced" \
     "Soft_L — for aliased art, strong" \
+    "VL — very large network, heavy" \
+    "UL — ultra large network, heaviest" \
+    "Soft_VL — soft-tuned very large, heavy" \
+    "Soft_UL — soft-tuned ultra large, heaviest" \
     "Clear — 3D: sharpen soft/TAA image" \
     "Clear_Vivid — 3D: sharpness + color pop" \
     "Clear_AA — 3D: anti-aliasing + sharpness" | cut -d' ' -f1)"
@@ -190,7 +195,7 @@ cmd_edit() {
   field="$(gum choose --header "Edit what?" $fields)"
   [ -n "$field" ] || exit 0
   case "$field" in
-    variant) new="$(gum choose "L" "M" "S" "Soft_S" "Soft_L" "Clear" "Clear_Vivid" "Clear_AA")" ;;
+    variant) new="$(gum choose "L" "M" "S" "Soft_S" "Soft_M" "Soft_L" "VL" "UL" "Soft_VL" "Soft_UL" "Clear" "Clear_Vivid" "Clear_AA")" ;;
     gpu) new="$(gpu_list | gum filter --header "Game GPU")"; ;;
     fps) new="$(gum input --header "FPS cap (number, or off)" --value "$(lib_get fps "$id")")" ;;
     hud) gum confirm "Show fps overlay?" && new="1" || new="0" ;;

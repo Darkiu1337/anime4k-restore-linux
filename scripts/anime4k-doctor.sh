@@ -48,7 +48,7 @@ fi
 
 # 3. Shaders the launchers will reference.
 SHADERS_OK=1
-for v in S M L Soft_S Soft_L; do
+for v in S M L Soft_S Soft_M Soft_L VL UL Soft_VL Soft_UL; do
   if [ -f "$ANIME4K_SHADER_DIR/Anime4K_Restore_$v.fx" ]; then
     :
   else
@@ -56,7 +56,7 @@ for v in S M L Soft_S Soft_L; do
     SHADERS_OK=0
   fi
 done
-[ "$SHADERS_OK" = "1" ] && ok "shaders (5 variants) in $ANIME4K_SHADER_DIR"
+[ "$SHADERS_OK" = "1" ] && ok "shaders (10 variants) in $ANIME4K_SHADER_DIR"
 
 # 3b. Clear presets (3D clarity): manifest + custom color shader + a render
 # smoke test of each chain (no game, nothing left behind).

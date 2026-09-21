@@ -79,10 +79,19 @@ so compositing tricks are out; everything here is in-process filtering.
 | M | 7 (6 conv + dense output) | ~2× S | played, no errors |
 | L | 9 (split dual convs + output) | ~4× S | played, 60fps capped |
 | Soft_S | 4, soft-line tuned | ~1× S | played, no errors |
+| Soft_M | 7, soft-line tuned | ~2× S | generated/compiled |
 | Soft_L | 9-way split, soft-line tuned | ~4× S | played, no errors |
+| VL | 20 (8-pass split chain, 6 targets) | heavy | generated/compiled |
+| UL | 25 (8-pass split chain, 8 targets) | heaviest | generated/compiled |
+| Soft_VL | 20, soft-line tuned | heavy | generated/compiled |
+| Soft_UL | 25, soft-line tuned | heaviest | generated/compiled |
 
-Soft variants target aliased/downscaled art rather than compression blur.
-Cost scales with input pixels; all figures at 1080p on a GTX 1650-class GPU.
+Soft variants target aliased/downscaled art rather than compression blur. UL/VL
+are much larger networks (more passes and fullscreen RGBA16F targets), so they
+are the heaviest and most VRAM-hungry tiers; measure on your GPU before daily
+use. Cost scales with input pixels; S/M/L figures are at 1080p on a
+GTX 1650-class GPU. Regenerate any variant with
+`shaders/gen_restore_fx.py --variant <name> --magpie-dir <Magpie checkout>`.
 
 ### Clear presets (3D / rendered VNs)
 

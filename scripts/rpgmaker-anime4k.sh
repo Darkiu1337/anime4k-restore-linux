@@ -16,7 +16,7 @@
 #
 # Options:
 #   --gamepath DIR       game folder (or omit for picker)
-#   --variant NAME                 Restore strength (S|M|L|Soft_S|Soft_L) or a
+#   --variant NAME                 Restore strength (S|M|L|Soft_S|Soft_M|Soft_L|VL|UL|Soft_VL|Soft_UL) or a
 #                                  Clear 3D preset (Clear|Clear_Vivid|Clear_AA)
 #   --gpu nvidia|amd|intel|auto  Vulkan device for game+filter (default: auto)
 #   --fps N|off          MangoHud frame cap (default: 60; off disables)

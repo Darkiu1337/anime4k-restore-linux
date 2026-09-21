@@ -7,7 +7,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SHADER_DST="$HOME/.local/share/gamescope/reshade/Shaders"
 removed=0
 kept=0
-for v in S M L Soft_S Soft_L; do
+for v in S M L Soft_S Soft_M Soft_L VL UL Soft_VL Soft_UL; do
   dst="$SHADER_DST/Anime4K_Restore_$v.fx"
   src="$ROOT/shaders/Anime4K_Restore_$v.fx"
   if [ -f "$dst" ]; then

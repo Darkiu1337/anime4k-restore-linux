@@ -25,7 +25,12 @@ VARIANT_NOTES = {
     "M": "balanced",
     "S": "lightest, cheapest",
     "Soft_S": "for aliased art, light",
+    "Soft_M": "for aliased art, balanced",
     "Soft_L": "for aliased art, strong",
+    "VL": "very large network, heavy",
+    "UL": "ultra large network, heaviest",
+    "Soft_VL": "soft-tuned very large, heavy",
+    "Soft_UL": "soft-tuned ultra large, heaviest",
     # Clear presets (3D clarity); the manifest's own `note` is authoritative.
     "Clear": "3D: sharpen soft/TAA image (neutral color)",
     "Clear_Vivid": "3D: sharpness + color pop (washed-out art)",

@@ -9,7 +9,7 @@
 #   Ren'Py example: native-anime4k.sh "/path/to/Game/Game.sh"
 #
 # Options:
-#   --variant NAME                 Restore strength (S|M|L|Soft_S|Soft_L) or a
+#   --variant NAME                 Restore strength (S|M|L|Soft_S|Soft_M|Soft_L|VL|UL|Soft_VL|Soft_UL) or a
 #                                  Clear 3D preset (Clear|Clear_Vivid|Clear_AA)
 #   --gl zink|auto       zink = force translation+filter (default);
 #                        auto = launch unfiltered if Zink misbehaves

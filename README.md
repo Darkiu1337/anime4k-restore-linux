@@ -5,8 +5,10 @@ Anime4K **Restore** CNN filters on Linux — the Magpie-on-Windows look
 capture tricks, or a compositor in the middle. Each game renders normally;
 the filter processes every presented frame through the vkBasalt Vulkan layer.
 
-Five Restore variants ship: **S, M, L, Soft_S, Soft_L**
-(S light … L strong; Soft tuned for aliased or downscaled art).
+Ten Restore variants ship: **S, M, L, Soft_S, Soft_M, Soft_L** plus the much
+larger **VL, UL, Soft_VL, Soft_UL** networks (S light … UL heaviest; Soft
+tuned for aliased or downscaled art). UL/VL are the heaviest tiers — measure
+them on your GPU before daily use.
 
 For **3D / rendered VNs**, where the Restore CNN has little to work with,
 three **Clear** presets ship alongside them: **Clear** (sharpness),
