@@ -145,11 +145,20 @@ Dialog {
         id: dirPicker
         title: "Select RPGMaker game folder"
         onAccepted: {
-            var p = backend.fileUrlToPath(dirPicker.selectedFile)
+            var p = backend.fileUrlToPath(dirPicker.selectedFolder)
             if (p !== "") {
                 pathField.text = p
                 backend.rememberDir(p)
             }
+        }
+    }
+
+    // Result of the native (kdialog/zenity) picker started by backend.pickPath.
+    Connections {
+        target: backend
+        function onPathPicked(kind, path) {
+            if (path !== "")
+                pathField.text = path
         }
     }
 
@@ -241,7 +250,12 @@ Dialog {
                             Btn {
                                 text: "Browse…"
                                 onClicked: {
-                                    if (root.runner === "rpgmaker") {
+                                    // Native desktop picker (KDE kdialog / zenity);
+                                    // QML dialogs only as a last resort.
+                                    var target = root.runner === "rpgmaker" ? "dir" : "file"
+                                    if (backend.pickPath(target))
+                                        return
+                                    if (target === "dir") {
                                         dirPicker.currentFolder = backend.pathToFileUrl(backend.lastDir())
                                         dirPicker.open()
                                     } else {

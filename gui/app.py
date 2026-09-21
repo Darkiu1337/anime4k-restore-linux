@@ -7,6 +7,7 @@ this file is the QML bootstrap plus the QML-bound backend.
 """
 import json
 import os
+import shutil
 import sys
 import threading
 
@@ -225,6 +226,7 @@ class GuiBackend(QObject):
     gamesChanged = Signal()
     setupLaunched = Signal(str)
     gpusChanged = Signal()
+    pathPicked = Signal(str, str)  # (target "file"|"dir", chosen path or "")
 
     def __init__(self, model, parent=None):
         super().__init__(parent)
@@ -234,6 +236,7 @@ class GuiBackend(QObject):
         self._running = False
         self.proc = None
         self.textbox_proc = None
+        self._picker = None
         self._running_gid = None
         self._running_translate = False
         self._pending = None
@@ -462,6 +465,57 @@ class GuiBackend(QObject):
         cfg = store.load_config()
         cfg["gui.last_dir"] = path if os.path.isdir(path) else os.path.dirname(path)
         store.save_config(cfg)
+
+    def _picker_argv(self, target):
+        """Native picker argv: KDE's kdialog first, zenity fallback, None when
+        neither exists (the QML dialogs are then used)."""
+        start = self.lastDir()
+        if target == "dir":
+            title = "Select RPGMaker game folder"
+            if shutil.which("kdialog"):
+                return ["kdialog", "--getexistingdirectory", start,
+                        "--title", title]
+            if shutil.which("zenity"):
+                return ["zenity", "--file-selection", "--directory",
+                        "--title", title, "--filename", start + os.sep]
+        else:
+            title = "Select Windows game executable"
+            if shutil.which("kdialog"):
+                return ["kdialog", "--getopenfilename", start,
+                        "Windows executables (*.exe *.EXE)\nAll files (*)",
+                        "--title", title]
+            if shutil.which("zenity"):
+                return ["zenity", "--file-selection", "--title", title,
+                        "--file-filter", "Windows executables | *.exe *.EXE",
+                        "--file-filter", "All files | *",
+                        "--filename", start + os.sep]
+        return None
+
+    @Slot(str, result=bool)
+    def pickPath(self, target):
+        """Open the desktop's native file/folder picker (KDE kdialog, zenity
+        fallback). Returns False when neither is installed, so QML can fall
+        back to its own dialog."""
+        argv = self._picker_argv(target)
+        if not argv:
+            return False
+        proc = QProcess(self)
+        proc.setProgram(argv[0])
+        proc.setArguments(argv[1:])
+        proc.finished.connect(
+            lambda _code, _status, p=proc, t=target: self._picked_path(t, p))
+        self._picker = proc
+        proc.start()
+        return True
+
+    def _picked_path(self, target, proc):
+        out = proc.readAllStandardOutput().data().decode("utf-8", "replace")
+        lines = [ln.strip() for ln in out.splitlines() if ln.strip()]
+        path = lines[0] if lines else ""
+        if path:
+            self.rememberDir(path)
+        self.pathPicked.emit(target, path)
+        proc.deleteLater()
 
     @Slot(str, bool, result=str)
     def launchGame(self, gid, unfiltered):
