@@ -118,6 +118,10 @@ In the GUI, the top bar has **Settings** (Wine prefix, Proton picker, per-app
 font, GPU-list refresh, vkBasalt layer dir) and **Quit**; everything else is
 per-game in the wizard and the game list.
 
+To remove the deployed pieces again (shaders, symlinks, desktop entries,
+GNOME extension, caches), run `./uninstall.sh`; it never touches your game
+library or config.
+
 ## Troubleshooting
 
 ```sh

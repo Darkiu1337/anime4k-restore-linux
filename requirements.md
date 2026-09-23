@@ -17,6 +17,12 @@ from upstream docs — confirmations welcome.
 | pciutils | `pciutils` [verified] | `pciutils` | `pciutils` | optional: `lspci` fallback for GPU detection when `/sys/class/drm` is unavailable |
 | icoextract | `icoextract` [verified] | `python3-icoextract` | `pip install icoextract` | game-icon extraction for the GUI |
 | git | `git` [verified] | `git` | `git` | cloning this repo |
+| curl | `curl` [verified] | `curl` | `curl` | downloads: vendor bundle, Proton, releases |
+| tar | `tar` [verified] | `tar` | `tar` | extracting those downloads |
+
+Optional desktop helpers (detected, never required): `kdialog` for the GUI's
+native KDE file picker, `qdbus6` for the textbox Top on KDE Wayland, and
+`gnome-extensions` for the textbox Top on GNOME Wayland.
 
 Filter selection needs nothing extra: the Restore variants are `.fx` files
 shipped here, and the 3D **Clear** presets use vkBasalt built-ins (`cas`,

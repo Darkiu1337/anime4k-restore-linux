@@ -87,7 +87,7 @@ def _palette_defaults():
 
 
 def _css_color(v, fallback):
-    # str(QColor) is garbage; use .name() (see HANDOFF.md QML specifics).
+    # str(QColor) is not a CSS color; use .name() for the QML-side string.
     try:
         if isinstance(v, QColor):
             return v.name()
@@ -338,8 +338,8 @@ class Backend(QObject):
 
     @Slot(float, float, bool)
     def pointerAt(self, x, y, inside):
-        # Event coords only; cursor/geometry queries are dead on Wayland
-        # (see HANDOFF.md QML specifics).
+        # Event coords only; cursor/geometry queries do not work on Wayland,
+        # so the QML HoverHandler feeds us the pointer position instead.
         inside = bool(inside)
         self._pointer_inside = inside
         strip = False
@@ -619,8 +619,8 @@ class Backend(QObject):
             self._corner_radius = queried if queried is not None else 10
         self._keepontop = s.value("keepontop", True, type=bool)
         self._autohide = s.value("autohide", False, type=bool)
-        # Restores must emit notifies or bindings keep load-time defaults
-        # (see HANDOFF.md QML specifics).
+        # Restores must emit notifies, or QML bindings keep their load-time
+        # defaults instead of picking up the persisted values.
         for _sig in (self.showJaChanged, self.keepOnTopChanged,
                      self.clickThroughChanged, self.autoHideChanged,
                      self.statusTextChanged, self.fontSizeChanged,
@@ -842,7 +842,7 @@ def self_test(backend, window):
     backend._chrome_autohide = False
     backend._update_chrome_visibility()
     assert backend._chrome_visible is True, "autohide off must restore chrome"
-    # Restore must emit all notifies (see HANDOFF.md QML specifics).
+    # Restore must emit all notifies, or QML bindings keep load-time defaults.
     _fired = []
     for _sig in (backend.showJaChanged, backend.keepOnTopChanged,
                  backend.clickThroughChanged, backend.autoHideChanged,

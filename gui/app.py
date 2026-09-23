@@ -171,7 +171,7 @@ class GamesModel(QAbstractListModel):
 
     def _want_icons(self, gids):
         """Queue icons but defer the worker past the first paint so icoextract
-        never competes with the window map (see HANDOFF)."""
+        never competes with the window map."""
         self._icon_wanted.update(
             g for g in gids if g and g not in self._icon_attempted)
         if self._icon_wanted and not self._icon_flush_scheduled:
